@@ -3178,22 +3178,22 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                 </div>
             </div>
 
-            {/* --- AREA CETAK PRESISI A4 KOTAK PENUH --- */}
+           {/* --- AREA CETAK PRESISI A4 KOTAK PENUH --- */}
             <div id="print-area" className="hidden print:block bg-white text-black print-area-khusus">
                 <style>{`
-                   @media print {
-                        /* 1. RESET MARGIN KERTAS */
+                    @media print {
+                        /* 1. RESET MARGIN KERTAS (Paksa 0 agar tidak bertumpuk) */
                         @page { 
                             size: A4 portrait; 
                             margin: 0 !important; 
                         }
                         
-                        /* 2. Reset Layout CSS - UBAH: height: auto agar konten bisa menyeberang halaman */
+                        /* 2. Reset Layout CSS (Diperbaiki: menggunakan height auto & overflow visible) */
                         html, body, #root {
-                            height: auto !important; 
+                            height: auto !important;
                             min-height: 100% !important;
                             width: 100% !important;
-                            overflow: visible !important; /* Mencegah halaman kedua terpotong */
+                            overflow: visible !important; 
                             background: white !important;
                             margin: 0 !important;
                             padding: 0 !important;
@@ -3201,9 +3201,14 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                             color-adjust: exact !important;
                         }
 
-                        /* 3. Pengaturan Kontainer Area Cetak */
+                        /* 3. Tampilkan Hanya Area Cetak */
+                        body * { visibility: hidden; }
+                        #print-area, #print-area * { visibility: visible; }
+                        
                         #print-area {
-                            position: relative !important; /* UBAH: dari absolute menjadi relative */
+                            position: relative !important; /* Diperbaiki: Menggunakan relative bukan absolute */
+                            left: 0 !important;
+                            top: 0 !important;
                             width: 210mm !important; /* Pas lebar A4 */
                             display: block !important;
                         }
@@ -3218,7 +3223,7 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                             grid-template-rows: 135mm 135mm !important; /* Kunci ukuran tinggi pas */
                             align-content: start !important; /* Kunci di atas jika cuma 2 kartu */
                             gap: 5mm !important;
-                            page-break-after: always !important; /* Kunci pindah halaman */
+                            page-break-after: always !important; /* Kunci paksa ke halaman baru */
                             box-sizing: border-box !important;
                         }
                         
