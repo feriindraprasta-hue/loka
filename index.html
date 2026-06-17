@@ -3177,8 +3177,7 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                     </div>
                 </div>
             </div>
-
-           {/* --- AREA CETAK PRESISI A4 KOTAK PENUH --- */}
+{/* --- AREA CETAK PRESISI A4 KOTAK PENUH --- */}
             <div id="print-area" className="hidden print:block bg-white text-black print-area-khusus">
                 <style>{`
                     @media print {
@@ -3188,7 +3187,7 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                             margin: 0 !important; 
                         }
                         
-                        /* 2. RESET SEMUA KUNCAN TAILWIND DARI PARENT (Ini kunci utamanya!) */
+                        /* 2. RESET SEMUA KUNCAN TAILWIND DARI PARENT */
                         html, body, #root, main, .h-screen, .min-h-screen, .overflow-hidden, .overflow-y-auto, .flex-1 {
                             height: auto !important;
                             min-height: 0 !important;
@@ -3207,23 +3206,27 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                             padding: 0 !important;
                         }
 
-                        /* 4. WRAPPER HALAMAN (Menggunakan Flexbox agar tidak terpotong Chrome) */
+                        /* 4. WRAPPER HALAMAN (Mencegah Spillover) */
                         .print-page-wrapper {
                             width: 210mm !important; 
-                            height: 297mm !important; 
-                            padding: 10mm !important; 
+                            min-height: 290mm !important; /* Gunakan min-height agar elastis dan tidak luber */
+                            padding: 8mm !important; /* Kurangi padding sedikit agar ada ruang sisa di A4 */
                             display: flex !important;
                             flex-wrap: wrap !important;
                             align-content: flex-start !important;
                             gap: 5mm !important;
-                            page-break-after: always !important;
-                            page-break-inside: avoid !important;
                             box-sizing: border-box !important;
+                            page-break-inside: avoid !important;
+                        }
+                        
+                        /* KUNCI MENCEGAH HALAMAN KOSONG DI AKHIR: Hanya beri jarak jika BUKAN halaman terakhir */
+                        .print-page-wrapper:not(:last-child) {
+                            page-break-after: always !important;
                         }
                         
                         /* 5. KARTU BEBAS PUSTAKA */
                         .print-card {
-                            width: calc(50% - 2.5mm) !important; /* Presisi membagi 2 kolom */
+                            width: calc(50% - 2.5mm) !important; 
                             height: 135mm !important;
                             border: 1.5px dashed #475569 !important; 
                             padding: 6mm 8mm !important;
@@ -3235,7 +3238,7 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                         }
                     }
                 `}</style>
-                
+                           
                 {pages.map((pageSiswa, pageIndex) => (
                     <div key={pageIndex} className="print-page-wrapper">
                         {pageSiswa.map(s => {
