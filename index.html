@@ -860,104 +860,110 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
         };
 
        const PrintLabelView = ({ buku, sekolah, onClose, filterText }) => {
-    const [page, setPage] = useState(1);
-    const limit = 50; // Batas 50 Barcode per layar
+            const [page, setPage] = useState(1);
+            const limit = 50; // Batas 50 Barcode per layar
 
-    const eD = useMemo(() => { 
-        let l = []; 
-        buku.forEach(b => { 
-            const st = parseInt(b.stock) > 0 ? parseInt(b.stock) : 1; 
-            for (let i = 1; i <= st; i++) { 
-                const baseCode = b.noInduk || b.isbn || b.id; 
-                const uBarcode = `${baseCode}-${i}`; 
-                const sL = [b.kodeLabel ? b.kodeLabel : getDDC(b.klasifikasiDDC), getAuthorCode(b.pengarang), getTitleCode(b.judul), b.lokasiRak ? b.lokasiRak : `c.${i}`].filter(Boolean); 
-                l.push({ ...b, copyNum: i, totalCopies: st, spineCallNumber: sL.join('\n'), callNumberLine: sL.join(' '), uniqueBarcode: uBarcode }); 
-            } 
-        }); 
-        return l; 
-    }, [buku]);
+            const eD = useMemo(() => { 
+                let l = []; 
+                buku.forEach(b => { 
+                    const st = parseInt(b.stock) > 0 ? parseInt(b.stock) : 1; 
+                    for (let i = 1; i <= st; i++) { 
+                        const baseCode = b.noInduk || b.isbn || b.id; 
+                        const uBarcode = `${baseCode}-${i}`; 
+                        const sL = [b.kodeLabel ? b.kodeLabel : getDDC(b.klasifikasiDDC), getAuthorCode(b.pengarang), getTitleCode(b.judul), b.lokasiRak ? b.lokasiRak : `c.${i}`].filter(Boolean); 
+                        l.push({ ...b, copyNum: i, totalCopies: st, spineCallNumber: sL.join('\n'), callNumberLine: sL.join(' '), uniqueBarcode: uBarcode }); 
+                    } 
+                }); 
+                return l; 
+            }, [buku]);
 
-    // Menghitung total halaman
-    const totalPages = Math.ceil(eD.length / limit) || 1;
-    const currentBatch = eD.slice((page - 1) * limit, page * limit);
+            // Menghitung total halaman
+            const totalPages = Math.ceil(eD.length / limit) || 1;
+            const currentBatch = eD.slice((page - 1) * limit, page * limit);
 
-    // KUNCI 1: Menampilkan Judul Buku sebagai Ganti "MODE CETAK MASSAL"
-    const displayTitle = filterText 
-        ? filterText.split(',').filter(x => x.trim() !== '').join(', ').toUpperCase()
-        : 'SEMUA KOLEKSI BUKU';
+            // KUNCI 1: Menampilkan Judul Buku sebagai Ganti "MODE CETAK MASSAL"
+            const displayTitle = filterText 
+                ? filterText.split(',').filter(x => x.trim() !== '').join(', ').toUpperCase()
+                : 'SEMUA KOLEKSI BUKU';
 
-    return (
-        <div id="print-area" className="relative min-h-screen bg-slate-100 pb-10">
-            {/* --- KONTROL BATCH --- */}
-            <div className="print:hidden fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 flex justify-between items-center shadow-2xl z-[99999]">
-                <div className="flex items-center gap-4 max-w-[50%]">
-                    <button onClick={onClose} className="w-10 h-10 shrink-0 bg-slate-800 hover:bg-rose-600 rounded-full flex justify-center items-center transition-colors">
-                        <i className="fas fa-arrow-left"></i>
-                    </button>
-                    <div className="overflow-hidden">
-                        <h3 className="font-black text-sm uppercase tracking-widest text-indigo-400 truncate" title={displayTitle}>
-                            {displayTitle}
-                        </h3>
-                        <p className="text-xs font-bold text-slate-300">Total: {eD.length} Barcode</p>
-                    </div>
-                </div>
-                
-                {/* Navigasi Halaman */}
-                <div className="flex items-center gap-2 bg-slate-800 p-1.5 rounded-xl border border-slate-700">
-                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="w-10 h-10 bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-indigo-600 flex justify-center items-center font-bold transition-all"><i className="fas fa-chevron-left"></i></button>
-                    <div className="px-4 text-center font-black">
-                        <span className="text-xl">{page}</span> <span className="text-slate-500 text-sm">/ {totalPages}</span>
-                    </div>
-                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="w-10 h-10 bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-indigo-600 flex justify-center items-center font-bold transition-all"><i className="fas fa-chevron-right"></i></button>
-                </div>
-
-                <button onClick={() => window.print()} className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black px-6 py-2.5 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.4)] flex items-center gap-2 transition-all active:scale-95">
-                    <i className="fas fa-print"></i> Cetak Batch {page}
-                </button>
-            </div>
-
-            {/* AREA KERTAS CETAK */}
-            <div className="pt-24 print:pt-0">
-                <style>{`
-                    @media print {
-                        @page { size: A4 portrait; margin: 10mm; }
-                        body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
-                        #print-area { padding: 0 !important; }
-                    }
-                    #print-area { font-family: 'Plus Jakarta Sans', sans-serif; width: 100%; min-height: 100vh; box-sizing: border-box; padding: 10mm; }
-                    .print-container { display: flex; flex-wrap: wrap; gap: 5mm; justify-content: center; align-content: flex-start; width: 100%; }
-                    .label-wrapper { display: flex; align-items: center; gap: 2mm; padding: 2.5mm; border: 1.5px dashed #cbd5e1; border-radius: 10px; width: 88mm; break-inside: avoid; page-break-inside: avoid; background: #fff; }
-                    .barcode-part { width: 45mm; height: 30mm; border: 1px solid #94a3b8; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-                    .barcode-header { background-color: #4f46e5 !important; color: #fff !important; font-size: 7pt; font-weight: 800; text-align: center; padding: 3px 4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .5px; }
-                    .barcode-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; }
-                    .barcode-callnum { font-size: 8pt; font-weight: 900; margin-top: 3px; color: #0f172a; letter-spacing: 1px; }
-                    .barcode-copy { font-size: 6pt; font-weight: 700; margin-top: 1px; color: #64748b; }
-                    .spine-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #fdf8ea !important; display: flex; align-items: center; justify-content: center; padding: 2px; text-align: center; font-size: 7.5pt; font-weight: 900; line-height: 1.3; color: #0f172a; }
-                    .fold-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #ffffff !important; display: flex; align-items: center; justify-content: center; }
-                `}</style>
-                
-                <div className="print-container">
-                    {currentBatch.map((i, idx) => (
-                        <div key={idx} className="label-wrapper">
-                            <div className="fold-part"></div>
-                            <div className="spine-part" style={{ whiteSpace: 'pre-line' }}>{i.spineCallNumber}</div>
-                                
-                            <div className="barcode-part">
-                                <div className="barcode-header">{sekolah.nama || 'PERPUSTAKAAN'}</div>
-                                <div className="barcode-body">
-                                    <div style={{ display: 'flex', justifyContent: 'center', width: '100%', padding: '8px 0', margin: '2px 0' }}>
-                                        <img src={`https://barcodeapi.org/api/128/${(i.isbn || '').replace(/\D/g, '')}-${i.copyNum}`} alt="barcode" style={{ height: '50px', width: '100%', maxWidth: '5cm', objectFit: 'fill' }} />
-                                    </div>        
-                                    <div className="barcode-copy">EKS {i.copyNum}/{i.totalCopies}</div>
-                                </div>
+            return (
+                /* --- PERUBAHAN 1: bg-slate-100 diganti menjadi bg-white --- */
+                <div id="print-area" className="relative min-h-screen bg-white pb-10">
+                    {/* --- KONTROL BATCH --- */}
+                    <div className="print:hidden fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 flex justify-between items-center shadow-2xl z-[99999]">
+                        <div className="flex items-center gap-4 max-w-[50%]">
+                            <button onClick={onClose} className="w-10 h-10 shrink-0 bg-slate-800 hover:bg-rose-600 rounded-full flex justify-center items-center transition-colors">
+                                <i className="fas fa-arrow-left"></i>
+                            </button>
+                            <div className="overflow-hidden">
+                                <h3 className="font-black text-sm uppercase tracking-widest text-indigo-400 truncate" title={displayTitle}>
+                                    {displayTitle}
+                                </h3>
+                                <p className="text-xs font-bold text-slate-300">Total: {eD.length} Barcode</p>
                             </div>
-                        </div>                                       
-                    ))}
+                        </div>
+                        
+                        {/* Navigasi Halaman */}
+                        <div className="flex items-center gap-2 bg-slate-800 p-1.5 rounded-xl border border-slate-700">
+                            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="w-10 h-10 bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-indigo-600 flex justify-center items-center font-bold transition-all"><i className="fas fa-chevron-left"></i></button>
+                            <div className="px-4 text-center font-black">
+                                <span className="text-xl">{page}</span> <span className="text-slate-500 text-sm">/ {totalPages}</span>
+                            </div>
+                            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="w-10 h-10 bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-indigo-600 flex justify-center items-center font-bold transition-all"><i className="fas fa-chevron-right"></i></button>
+                        </div>
+
+                        <button onClick={() => window.print()} className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black px-6 py-2.5 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.4)] flex items-center gap-2 transition-all active:scale-95">
+                            <i className="fas fa-print"></i> Cetak Batch {page}
+                        </button>
+                    </div>
+
+                    {/* AREA KERTAS CETAK */}
+                    <div className="pt-24 print:pt-0">
+                        <style>{`
+                            @media print {
+                                @page { size: A4 portrait; margin: 10mm; }
+                                body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
+                                #print-area { padding: 0 !important; }
+                            }
+                            #print-area { font-family: 'Plus Jakarta Sans', sans-serif; width: 100%; min-height: 100vh; box-sizing: border-box; padding: 10mm; }
+                            .print-container { display: flex; flex-wrap: wrap; gap: 5mm; justify-content: center; align-content: flex-start; width: 100%; }
+                            .label-wrapper { display: flex; align-items: center; gap: 2mm; padding: 2.5mm; border: 1.5px dashed #cbd5e1; border-radius: 10px; width: 88mm; break-inside: avoid; page-break-inside: avoid; background: #fff; }
+                            .barcode-part { width: 45mm; height: 30mm; border: 1px solid #94a3b8; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+                            .barcode-header { background-color: #4f46e5 !important; color: #fff !important; font-size: 7pt; font-weight: 800; text-align: center; padding: 3px 4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .5px; }
+                            .barcode-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; }
+                            .barcode-callnum { font-size: 8pt; font-weight: 900; margin-top: 3px; color: #0f172a; letter-spacing: 1px; }
+                            .barcode-copy { font-size: 6pt; font-weight: 700; margin-top: 1px; color: #64748b; }
+                            .spine-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #fdf8ea !important; display: flex; align-items: center; justify-content: center; padding: 2px; text-align: center; font-size: 7.5pt; font-weight: 900; line-height: 1.3; color: #0f172a; }
+                            .fold-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #ffffff !important; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 2px; }
+                        `}</style>
+                        
+                        <div className="print-container">
+                            {currentBatch.map((i, idx) => (
+                                <div key={idx} className="label-wrapper">
+                                    {/* --- PERUBAHAN 2: Menampilkan Logo Sekolah di kotak nomor 2 --- */}
+                                    <div className="fold-part">
+                                        {sekolah.logo && (
+                                            <img src={sekolah.logo} alt="Logo Sekolah" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                        )}
+                                    </div>
+                                    <div className="spine-part" style={{ whiteSpace: 'pre-line' }}>{i.spineCallNumber}</div>
+                                        
+                                    <div className="barcode-part">
+                                        <div className="barcode-header">{sekolah.nama || 'PERPUSTAKAAN'}</div>
+                                        <div className="barcode-body">
+                                            <div style={{ display: 'flex', justifyContent: 'center', width: '100%', padding: '8px 0', margin: '2px 0' }}>
+                                                <img src={`https://barcodeapi.org/api/128/${(i.isbn || '').replace(/\D/g, '')}-${i.copyNum}`} alt="barcode" style={{ height: '50px', width: '100%', maxWidth: '5cm', objectFit: 'fill' }} />
+                                            </div>        
+                                            <div className="barcode-copy">EKS {i.copyNum}/{i.totalCopies}</div>
+                                        </div>
+                                    </div>
+                                </div>                                       
+                            ))}
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-    );
-};
+            );
+        };
         
         const RekapView = ({ kehadiran, peminjaman, anggota, onPrint, filter, setFilter, sekolah }) => {
             const uKlsLengkap = useMemo(() => [...new Set(anggota.filter(d => d.kategori === 'Siswa').map(d => formatKelasSiswa(d, sekolah?.daftarJurusan)).filter(Boolean))].sort(), [anggota, sekolah]);
