@@ -1871,13 +1871,13 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
             useEffect(() => { const kD = e => { if (e.ctrlKey && e.key.toLowerCase() === 'q') { e.preventDefault(); setSDM(p => !p); } }; window.addEventListener('keydown', kD); return () => window.removeEventListener('keydown', kD); }, []);
 
             const fD = data.filter(i => {
-                const mT = i.nama.toLowerCase().includes(filter.toLowerCase()) || (i.nisn && i.nisn.toLowerCase().includes(filter.toLowerCase())) || (i.kelas && i.kelas.toLowerCase().includes(filter.toLowerCase())) || i.kategori.toLowerCase().includes(filter.toLowerCase()) || i.id.toLowerCase().includes(filter.toLowerCase());
-                const mK = fKat === 'Semua' || i.kategori === fKat;
-                const mKl = fKls === 'Semua' || formatKelasSiswa(i, dJ) === fKls;
-                const mJur = fJur === 'Semua' || i.jurusan === fJur;
-                const mTh = fThn === 'Semua' || i.tahunPelajaran === fThn;
-                return mT && mK && mKl && mJur && mTh;
-            });
+            const mT = i.nama.toLowerCase().includes(filter.toLowerCase()) || (i.nisn && i.nisn.toLowerCase().includes(filter.toLowerCase())) || (i.kelas && i.kelas.toLowerCase().includes(filter.toLowerCase())) || i.kategori.toLowerCase().includes(filter.toLowerCase()) || i.id.toLowerCase().includes(filter.toLowerCase());
+            const mK = fKat === 'Semua' || i.kategori === fKat;
+            const mKl = fKls === 'Semua' || formatKelasSiswa(i, dJ) === fKls;
+            const mJur = fJur === 'Semua' || i.jurusan === fJur;
+            const mTh = fThn === 'Semua' || i.tahunPelajaran === fThn;
+            return mT && mK && mKl && mJur && mTh;
+            }).sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
 
             const hS = e => { e.preventDefault(); const d = { ...f, tglDaftar: new Date().toISOString() }; if (eId) onUpdate(eId, d); else onAdd(d); setIo(false); setEId(null); setF(iF); showAlert('Berhasil', `Data ${eId ? 'diperbarui' : 'ditambahkan'}.`, 'success'); };
             const hC = e => { const l = e.target.files[0]; if (l) { if (l.size > 500000) return showAlert("File Kebesaran", "Maksimal ukuran foto 500KB", "warning"); const r = new FileReader(); r.onloadend = () => setF({ ...f, foto: r.result }); r.readAsDataURL(l); } };
