@@ -434,7 +434,7 @@ const formatNamaGelarPintar = (input) => {
 
          const PrintLabelHilangView = ({ items, sekolah, buku, onClose }) => {
     const [page, setPage] = useState(1);
-    const limit = 50;
+    const limit = 48;
 
     const eD = useMemo(() => {
         return items.map(p => {
@@ -861,7 +861,7 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
 
        const PrintLabelView = ({ buku, sekolah, onClose, filterText }) => {
             const [page, setPage] = useState(1);
-            const limit = 50; // Batas 50 Barcode per layar
+            const limit = 48; // Batas 50 Barcode per layar
 
             const eD = useMemo(() => { 
                 let l = []; 
