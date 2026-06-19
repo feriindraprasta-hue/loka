@@ -1853,7 +1853,7 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
             const dJ = sekolah?.daftarJurusan || DEFAULT_JURUSAN;
             
             const [fKat, setFKat] = useState('Semua'), [fKls, setFKls] = useState('Semua'), [fJur, setFJur] = useState('Semua'), [fThn, setFThn] = useState('Semua');
-            
+            const [isProsesNK, setIsProsesNK] = useState(false);
             const rkp = useMemo(() => { 
                 const a = data.filter(d => d.status === 'Aktif'); 
                 return { 
@@ -1882,8 +1882,41 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
             const hS = e => { e.preventDefault(); const d = { ...f, tglDaftar: new Date().toISOString() }; if (eId) onUpdate(eId, d); else onAdd(d); setIo(false); setEId(null); setF(iF); showAlert('Berhasil', `Data ${eId ? 'diperbarui' : 'ditambahkan'}.`, 'success'); };
             const hC = e => { const l = e.target.files[0]; if (l) { if (l.size > 500000) return showAlert("File Kebesaran", "Maksimal ukuran foto 500KB", "warning"); const r = new FileReader(); r.onloadend = () => setF({ ...f, foto: r.result }); r.readAsDataURL(l); } };
 
-            const hNK = () => showConfirm('Kenaikan Kelas', 'Yakin memproses kenaikan kelas masal?', () => { let c = 0; data.forEach(i => { if (i.kategori === 'Siswa' && i.status === 'Aktif') { if (i.kelas === 'X' || i.kelas === '10') { onUpdate(i.id, { kelas: 'XI' }); c++; } else if (i.kelas === 'XI' || i.kelas === '11') { onUpdate(i.id, { kelas: 'XII' }); c++; } else if (i.kelas === 'XII' || i.kelas === '12') { onUpdate(i.id, { status: 'Arsip' }); c++; } } }); showAlert('Selesai', `${c} data diperbarui.`, 'success'); });
-            
+           const hNK = () => showConfirm('Kenaikan Kelas', 'Yakin memproses kenaikan kelas masal? Jangan tutup halaman selama proses berlangsung.', async () => { 
+    setIsProsesNK(true);
+    let c = 0; 
+    
+    // 1. Kumpulkan data
+    const toUpdate = [];
+    data.forEach(i => { 
+        if (i.kategori === 'Siswa' && i.status === 'Aktif') { 
+            if (i.kelas === 'X' || i.kelas === '10') { toUpdate.push({ id: i.id, changes: { kelas: 'XI' } }); } 
+            else if (i.kelas === 'XI' || i.kelas === '11') { toUpdate.push({ id: i.id, changes: { kelas: 'XII' } }); } 
+            else if (i.kelas === 'XII' || i.kelas === '12') { toUpdate.push({ id: i.id, changes: { status: 'Arsip' } }); } 
+        } 
+    });
+
+    // 2. Fungsi pembuat jeda (delay)
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+    // 3. Eksekusi bertahap
+    const chunkSize = 50; 
+    for (let i = 0; i < toUpdate.length; i += chunkSize) {
+        const chunk = toUpdate.slice(i, i + chunkSize);
+        
+        // Eksekusi 50 data
+        await Promise.all(chunk.map(item => onUpdate(item.id, item.changes)));
+        c += chunk.length;
+        
+        // Berikan jeda setengah detik sebelum lanjut ke 50 data berikutnya
+        if (i + chunkSize < toUpdate.length) {
+            await delay(500); 
+        }
+    }
+
+    setIsProsesNK(false);
+    showAlert('Selesai', `Sukses! ${c} data anggota berhasil diperbarui.`, 'success'); 
+});
             const hMD = () => {
                 let t = [];
                 if (dT === 'all') t = data.filter(a => a.kategori === 'Siswa');
@@ -2021,7 +2054,11 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
                         <button onClick={hExp} className="px-4 py-2.5 text-sm font-bold bg-white text-emerald-600 border border-emerald-100 rounded-xl"><i className="fas fa-file-excel mr-2"></i> Export XLS</button>
                         <button onClick={hDownloadTemplate} className="px-4 py-2.5 text-sm font-bold bg-white text-indigo-600 border border-indigo-100 rounded-xl hover:bg-indigo-50"><i className="fas fa-file-download mr-2"></i> Template</button>
                         <label className="px-4 py-2.5 text-sm font-bold bg-white text-teal-600 border border-teal-100 rounded-xl cursor-pointer mb-0"><i className="fas fa-upload mr-2"></i> Import<input type="file" accept=".xlsx, .xls" onChange={hImp} className="hidden" /></label>
-                        <button onClick={hNK} className="px-4 py-2.5 text-sm font-bold bg-amber-50 text-amber-600 rounded-xl ml-auto"><i className="fas fa-arrow-up mr-2"></i> Naik Kelas</button>
+                        {/* INI ADALAH TOMBOL YANG BARU */}
+    <button onClick={hNK} disabled={isProsesNK} className="px-4 py-2.5 text-sm font-bold bg-amber-50 text-amber-600 rounded-xl ml-auto disabled:opacity-50 disabled:cursor-not-allowed">
+        <i className={`fas ${isProsesNK ? 'fa-spinner fa-spin' : 'fa-arrow-up'} mr-2`}></i> 
+        {isProsesNK ? 'Memproses...' : 'Naik Kelas'}
+    </button>
                         <button onClick={() => { setF(iF); setEId(null); setIo(true); }} className="btn-primary py-2.5 px-5"><i className="fas fa-plus mr-2"></i> Tambah</button>
                     </div>
                     <div className="overflow-x-auto w-full p-4">
