@@ -440,12 +440,37 @@ const formatNamaGelarPintar = (input) => {
         return items.map(p => {
             const b = buku.find(x => String(x.id) === String(p.idBuku)) || {};
             const cleanIsbn = (p.isbn || b.isbn || b.ISBN || String(b.id || '0000')).toString().replace(/\D/g, '');
-            const currentCopy = p.copyNum || '1';
-            const uBarcode = `${cleanIsbn}-${currentCopy}`;
-            const totalCopies = Math.max(parseInt(b.stock) || 1, parseInt(currentCopy) || 1);
-            const sL = [ b.kodeLabel ? b.kodeLabel : getDDC(b.klasifikasiDDC), getAuthorCode(b.pengarang), getTitleCode(b.judul || p.judulBuku), b.lokasiRak ? b.lokasiRak : `C.${currentCopy}` ].filter(Boolean);
+            
+            // PERBAIKAN: Gunakan kodeEksemplar asli dari data transaksi (misal: 9786022447887-74)
+            let uBarcode = p.kodeEksemplar || `${cleanIsbn}-1`;
+            let currentCopy = '1';
+            
+            // Ekstrak angka eksemplar dari string barcode (angka setelah tanda strip '-')
+            if (p.kodeEksemplar && p.kodeEksemplar.includes('-')) {
+                const parts = p.kodeEksemplar.split('-');
+                currentCopy = parts[parts.length - 1]; // Menghasilkan "74", "80", dll
+            } else if (p.copyNum) {
+                currentCopy = p.copyNum;
+            }
 
-            return { uniqueBarcode: uBarcode, rawIsbn: cleanIsbn, spineCallNumber: sL.join('\n'), callNumberLine: sL.join(' '), copyNum: currentCopy, totalCopies: totalCopies };
+            // Total buku ambil dari master (b.stock). Jika tidak ada, pakai nomor eksemplar saat ini.
+            const totalCopies = b.stock ? b.stock : Math.max(1, parseInt(currentCopy));
+
+            const sL = [ 
+                b.kodeLabel ? b.kodeLabel : getDDC(b.klasifikasiDDC), 
+                getAuthorCode(b.pengarang), 
+                getTitleCode(b.judul || p.judulBuku), 
+                b.lokasiRak ? b.lokasiRak : `C.${currentCopy}` 
+            ].filter(Boolean);
+
+            return { 
+                uniqueBarcode: uBarcode, 
+                rawIsbn: cleanIsbn, 
+                spineCallNumber: sL.join('\n'), 
+                callNumberLine: sL.join(' '), 
+                copyNum: currentCopy, 
+                totalCopies: totalCopies 
+            };
         });
     }, [items, buku]);
 
@@ -491,26 +516,21 @@ const formatNamaGelarPintar = (input) => {
                     .barcode-callnum { font-size: 8pt; font-weight: 900; margin-top: 3px; color: #0f172a; letter-spacing: 1px; }
                     .barcode-copy { font-size: 6pt; font-weight: 700; margin-top: 1px; color: #64748b; }
                     .spine-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #fdf8ea !important; display: flex; align-items: center; justify-content: center; padding: 2px; text-align: center; font-size: 7.5pt; font-weight: 900; line-height: 1.3; color: #0f172a; }
-                    /* Penyesuaian CSS fold-part agar identik dengan cetak massal */
                     .fold-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #ffffff !important; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 2px; }
                 `}</style>
                 <div className="print-container">
                     {currentBatch.map((i, idx) => (
                         <div key={idx} className="label-wrapper">
-                            
-                            {/* PERUBAHAN UTAMA 1: Tambahkan Logo Sekolah */}
                             <div className="fold-part">
                                 {sekolah.logo && (
                                     <img src={sekolah.logo} alt="Logo Sekolah" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                                 )}
                             </div>
-                            
                             <div className="spine-part" style={{ whiteSpace: 'pre-line' }}>{i.spineCallNumber}</div>
                             <div className="barcode-part">
                                 <div className="barcode-header">{sekolah.nama || 'PERPUSTAKAAN'}</div>
                                 <div className="barcode-body">
                                     <div style={{ display: 'flex', justifyContent: 'center', width: '100%', padding: '8px 0', margin: '2px 0' }}>
-                                        {/* PERUBAHAN UTAMA 2: Menggunakan API eksternal agar tampilannya identik (tajam dan bersih) */}
                                         <img src={`https://barcodeapi.org/api/128/${i.uniqueBarcode}`} alt="barcode" style={{ height: '50px', width: '100%', maxWidth: '5cm', objectFit: 'fill' }} />
                                     </div>        
                                     <div className="barcode-copy">EKS {i.copyNum}/{i.totalCopies}</div>
