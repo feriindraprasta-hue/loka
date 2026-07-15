@@ -432,7 +432,7 @@ const formatNamaGelarPintar = (input) => {
         };
 
 
-         const PrintLabelHilangView = ({ items, sekolah, buku, onClose }) => {
+    const PrintLabelHilangView = ({ items, sekolah, buku, onClose }) => {
     const [page, setPage] = useState(1);
     const limit = 140;
 
@@ -453,7 +453,7 @@ const formatNamaGelarPintar = (input) => {
     const currentBatch = eD.slice((page - 1) * limit, page * limit);
 
     return (
-        <div id="print-area" className="relative min-h-screen bg-slate-100 pb-10">
+        <div id="print-area" className="relative min-h-screen bg-white pb-10">
             {/* --- KONTROL BATCH --- */}
             <div className="print:hidden fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 flex justify-between items-center shadow-2xl z-[99999]">
                 <div className="flex items-center gap-4">
@@ -476,19 +476,44 @@ const formatNamaGelarPintar = (input) => {
             </div>
 
             <div className="pt-24 print:pt-0">
-                <style>{`@media print{@page{size:A4 portrait;margin:10mm}body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;margin:0;padding:0}#print-area{padding:0!important}}#print-area{font-family:'Plus Jakarta Sans',sans-serif;width:100%;min-height:100vh;box-sizing:border-box;padding:10mm}.print-container{display:flex;flex-wrap:wrap;gap:5mm;justify-content:center;align-content:flex-start;width:100%}.label-wrapper{display:flex;align-items:center;gap:2mm;padding:2.5mm;border:1.5px dashed #cbd5e1;border-radius:10px;width:88mm;break-inside:avoid;page-break-inside:avoid;background:#fff}.barcode-part{width:45mm;height:30mm;border:1px solid #94a3b8;border-radius:8px;display:flex;flex-direction:column;overflow:hidden}.barcode-header{background-color:#4f46e5!important;color:#fff!important;font-size:7pt;font-weight:800;text-align:center;padding:3px 4px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.5px}.barcode-body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px}.barcode-callnum{font-size:8pt;font-weight:900;margin-top:3px;color:#0f172a;letter-spacing:1px}.barcode-copy{font-size:6pt;font-weight:700;margin-top:1px;color:#64748b}.spine-part{width:18mm;height:30mm;border:1.5px solid #0f172a;background-color:#fdf8ea!important;display:flex;align-items:center;justify-content:center;padding:2px;text-align:center;font-size:7.5pt;font-weight:900;line-height:1.3;color:#0f172a}.fold-part{width:18mm;height:30mm;border:1.5px solid #0f172a;background-color:#ffffff!important;display:flex;align-items:center;justify-content:center}`}</style>
+                <style>{`
+                    @media print {
+                        @page { size: A4 portrait; margin: 10mm; }
+                        body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
+                        #print-area { padding: 0 !important; }
+                    }
+                    #print-area { font-family: 'Plus Jakarta Sans', sans-serif; width: 100%; min-height: 100vh; box-sizing: border-box; padding: 10mm; }
+                    .print-container { display: flex; flex-wrap: wrap; gap: 5mm; justify-content: center; align-content: flex-start; width: 100%; }
+                    .label-wrapper { display: flex; align-items: center; gap: 2mm; padding: 2.5mm; border: 1.5px dashed #cbd5e1; border-radius: 10px; width: 88mm; break-inside: avoid; page-break-inside: avoid; background: #fff; }
+                    .barcode-part { width: 45mm; height: 30mm; border: 1px solid #94a3b8; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+                    .barcode-header { background-color: #4f46e5 !important; color: #fff !important; font-size: 7pt; font-weight: 800; text-align: center; padding: 3px 4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .5px; }
+                    .barcode-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; }
+                    .barcode-callnum { font-size: 8pt; font-weight: 900; margin-top: 3px; color: #0f172a; letter-spacing: 1px; }
+                    .barcode-copy { font-size: 6pt; font-weight: 700; margin-top: 1px; color: #64748b; }
+                    .spine-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #fdf8ea !important; display: flex; align-items: center; justify-content: center; padding: 2px; text-align: center; font-size: 7.5pt; font-weight: 900; line-height: 1.3; color: #0f172a; }
+                    /* Penyesuaian CSS fold-part agar identik dengan cetak massal */
+                    .fold-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #ffffff !important; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 2px; }
+                `}</style>
                 <div className="print-container">
                     {currentBatch.map((i, idx) => (
                         <div key={idx} className="label-wrapper">
-                            <div className="fold-part"></div>
+                            
+                            {/* PERUBAHAN UTAMA 1: Tambahkan Logo Sekolah */}
+                            <div className="fold-part">
+                                {sekolah.logo && (
+                                    <img src={sekolah.logo} alt="Logo Sekolah" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                )}
+                            </div>
+                            
                             <div className="spine-part" style={{ whiteSpace: 'pre-line' }}>{i.spineCallNumber}</div>
                             <div className="barcode-part">
                                 <div className="barcode-header">{sekolah.nama || 'PERPUSTAKAAN'}</div>
                                 <div className="barcode-body">
                                     <div style={{ display: 'flex', justifyContent: 'center', width: '100%', padding: '8px 0', margin: '2px 0' }}>
-                                        <SimpleBarcode value={i.uniqueBarcode} height={50} />
+                                        {/* PERUBAHAN UTAMA 2: Menggunakan API eksternal agar tampilannya identik (tajam dan bersih) */}
+                                        <img src={`https://barcodeapi.org/api/128/${i.uniqueBarcode}`} alt="barcode" style={{ height: '50px', width: '100%', maxWidth: '5cm', objectFit: 'fill' }} />
                                     </div>        
-                                    <div className="barcode-copy" style={{ fontSize: '7pt', marginTop: '2px' }}>EKS {i.copyNum}/{i.totalCopies}</div>
+                                    <div className="barcode-copy">EKS {i.copyNum}/{i.totalCopies}</div>
                                 </div>
                             </div>
                         </div>
@@ -498,156 +523,6 @@ const formatNamaGelarPintar = (input) => {
         </div>
     );
 };
-
-        const PrintKartuAnggotaView = ({ anggota, sekolah, filter = { kategori: 'Semua', kelas: 'Semua', jurusan: 'Semua', tahun: 'Semua', search: '' } }) => {
-            const dJ = sekolah?.daftarJurusan || DEFAULT_JURUSAN;
-            
-            const fD = anggota.filter(a => {
-                if (a.status !== 'Aktif') return false;
-                if (filter?.search) {
-                    const searchTerms = filter.search.toLowerCase().split(',').map(t => t.trim()).filter(t => t);
-                    if (searchTerms.length > 0) {
-                        const isMatch = searchTerms.some(term => a.nama.toLowerCase().includes(term) || (a.nisn && a.nisn.toLowerCase().includes(term)));
-                        if (!isMatch) return false;
-                    }
-                }
-                if (filter?.kategori !== 'Semua' && a.kategori !== filter?.kategori) return false;
-                if (filter?.kategori === 'Siswa') {
-                    if (filter?.kelas !== 'Semua' && formatKelasSiswa(a, dJ) !== filter?.kelas) return false;
-                    if (filter?.jurusan !== 'Semua' && a.jurusan !== filter?.jurusan) return false;
-                    if (filter?.tahun !== 'Semua' && a.tahunPelajaran !== filter?.tahun) return false;
-                }
-                return true;
-            });
-
-            const anonPhoto = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394a3b8'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
-
-            return (
-                <div id="print-area">
-                    
-                    <style>{`
-                        @media print { 
-                            @page { size: A4; margin: 5mm; } /* Margin kertas A4 dikecilkan */
-                            body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; } 
-                            #print-area { padding: 0 !important; } /* Padamkan padding tambahan masa print */
-                        }
-                        #print-area { font-family: 'Plus Jakarta Sans', sans-serif; background: #fff; width: 100%; min-height: 100vh; box-sizing: border-box; padding: 10mm; }
-                        
-                        /* KONTENA CETAK: Gap dikecilkan, Posisi ke tengah (Boleh muat 2 Kolum) */
-                        .print-container { display: flex; flex-wrap: wrap; gap: 4mm; justify-content: center; align-content: flex-start; }
-                        
-                        /* UKURAN STANDAR ID CARD (CR80) DENGAN GRADASI BACKGROUND */
-                        .kartu-card { 
-                            width: 86mm; height: 54mm; 
-                            border: 1px solid #cbd5e1; border-radius: 8px; 
-                            padding: 3mm; box-sizing: border-box; 
-                            background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%); 
-                            display: flex; flex-direction: column; break-inside: avoid; page-break-inside: avoid;
-                            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5);
-                        }
-                        
-                        /* BAGIAN KOP SURAT SEKOLAH */
-                        .kartu-kop { display: flex; align-items: center; border-bottom: 2px solid #4338ca; padding-bottom: 1.5mm; margin-bottom: 2mm; }
-                        .kop-logo { width: 10mm; height: 10mm; object-fit: contain; margin-right: 2mm; }
-                        .kop-teks { flex: 1; text-align: center; }
-                        .kop-nama { font-size: 8pt; font-weight: 900; color: #1e1b4b; text-transform: uppercase; margin-bottom: 1px; line-height: 1.1; }
-                        .kop-alamat { font-size: 4.5pt; color: #334155; line-height: 1.2; margin-bottom: 0.5px; }
-                        .kop-kontak { font-size: 4.5pt; color: #334155; line-height: 1.2; }
-                        
-                        /* BAGIAN ISI KARTU (FOTO KIRI, DATA KANAN) */
-                        .kartu-body { display: flex; gap: 3mm; flex: 1; }
-                        .kartu-foto { 
-                            width: 18mm; height: 24mm; 
-                            border: 1.5px solid #fff; border-radius: 4px; 
-                            background: #f1f5f9; overflow: hidden; 
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                            flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-                        }
-                        .kartu-foto img { width: 100%; height: 100%; object-fit: cover; }
-                        .kartu-data { flex: 1; display: flex; flex-direction: column; }
-                        .kartu-data-title { font-size: 7pt; font-weight: 900; color: #312e81; text-transform: uppercase; margin-bottom: 1.5mm; text-align: center; letter-spacing: 0.5px; background: #c7d2fe; border-radius: 3px; padding: 1px 0; }
-                        
-                        /* TABEL DATA SISWA */
-                        .data-table { width: 100%; font-size: 5.5pt; line-height: 1.3; border-collapse: collapse; }
-                        .data-table td { vertical-align: top; padding: 0.5px 0; color: #0f172a; font-weight: 700; }
-                        .data-table td:first-child { width: 13mm; font-weight: 700; color: #475569; }
-                        .data-table td:nth-child(2) { width: 2mm; text-align: center; } /* REVISI BARCODE AGAR TAJAM SEPERTI CONTOH LAMA (ANTI-BLUR) */
-                        .kartu-barcode { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; width: 100%; padding-top: 1.5mm; }
-                        .kartu-barcode-wrapper { background: #fff; padding: 2px 4px; border-radius: 4px; display: flex; justify-content: center; width: 100%; }
-                                                                      
-                        
-                    `}</style>
-
-                    <div className="print-container">
-                        {fD.map(i => (
-                            <div key={i.id} className="kartu-card">
-                                {/* KOP SEKOLAH */}
-                                <div className="kartu-kop">
-                                    {sekolah.logo ? <img src={sekolah.logo} className="kop-logo" alt="Logo" /> : <div className="kop-logo" style={{background: '#e2e8f0', borderRadius: '50%'}}></div>}
-                                    <div className="kop-teks">
-                                        <div className="kop-nama">{sekolah.nama || 'NAMA SEKOLAH'}</div>
-                                        <div className="kop-alamat">{sekolah.alamat || 'Alamat Sekolah'}</div>
-                                        <div className="kop-kontak">{sekolah.email || 'email@sekolah.com'} | Telp: {sekolah.telepon || '-'}</div>
-                                    </div>
-                                </div>
-                                
-                                <div className="kartu-body">
-                                    {/* PAS FOTO (Kiri) */}
-                                    <div className="kartu-foto">
-                                        <img src={i.foto || anonPhoto} alt="Foto Anggota" />
-                                    </div>
-                                    
-                                    {/* DATA DAN BARCODE (Kanan) */}
-                                    <div className="kartu-data">
-                                        <div className="kartu-data-title">KARTU TANDA {i.kategori.toUpperCase()}</div>
-                                        <table className="data-table">
-                                            <tbody>
-                                                <tr><td>Nama</td><td>:</td><td style={{fontWeight: 900, fontSize: '6pt', color: '#000'}}>{i.nama}</td></tr>
-                                                {/* Label berubah dinamis: NISN untuk Siswa, NIP untuk Guru/Karyawan */}
-                                                <tr><td>{i.kategori === 'Siswa' ? 'NISN' : 'NIP'}</td><td>:</td><td>{i.nisn || i.id}</td></tr>
-                                                {/* Data di bawah ini hanya muncul untuk Siswa */}
-                                                {i.kategori === 'Siswa' && <tr><td>Jurusan</td><td>:</td><td>{i.jurusan || '-'}</td></tr>}
-                                                {i.kategori === 'Siswa' && <tr><td>Tahun</td><td>:</td><td>{i.tahunPelajaran || '-'}</td></tr>}
-                                            </tbody>
-                                        </table>
-                                        
-                                        <div className="kartu-barcode" style={{ justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '1mm' }}>
-    
-    {/* Teks penanda Siswa TETAP AMAN di sini */}
-    <div style={{ fontSize: '5pt', fontStyle: 'italic', color: '#4338ca', fontWeight: '800', marginBottom: '2px', lineHeight: '1.2' }}>
-        {i.kategori === 'Siswa' ? '*Berlaku Selama Menjadi Siswa' : ''}
-    </div>
-    
-    <div className="barcode-body">
-    {/* Container Barcode untuk Kartu Anggota */}
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', padding: '2px 0' }}>
-        
-        {/* 1. Barcode Batang 1D (Menggunakan NIP atau ID Anggota) */}
-        <img 
-            src={`https://barcodeapi.org/api/128/${(i.nip || i.nisn || i.id || '').toString().replace(/\s/g, '')}`} 
-            alt="barcode anggota" 
-            style={{ 
-                height: '45px', 
-                width: '100%', 
-                maxWidth: '220px', 
-                objectFit: 'fill' 
-            }}
-        />
-        
-                
-    </div>
-</div>
-    
-</div>
-
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            );
-        };
 
 
 const PrintDataAnggotaView = ({ anggota, sekolah, search }) => { 
@@ -2879,23 +2754,44 @@ const getShortBarcode = (text) => {
             useEffect(() => { const kD = e => { if (e.ctrlKey && e.key.toLowerCase() === 'q') { e.preventDefault(); setSTS(p => !p); } }; window.addEventListener('keydown', kD); return () => window.removeEventListener('keydown', kD); }, []);
 
             const gTL = useMemo(() => {
-                const td = new Date(); td.setHours(0, 0, 0, 0); let t = [];
-                const pM = (tp, u, l, d) => tp.replace(/\[NAMA\]/g, u.nama).replace(/\[SEKOLAH\]/g, sekolah?.nama || 'Instansi').replace(/\[JUDUL\]/g, l.judulBuku).replace(/\[BATAS\]/g, formatDate(l.tglHarusKembali)).replace(/\[HARI_INI\]/g, formatDate(new Date().toISOString().split('T')[0])).replace(/\[TERLAMBAT\]/g, Math.abs(d));
-                
-                peminjaman.filter(p => p.status === 'Dipinjam').forEach(l => {
-                    const u = anggota.find(a => a.id === l.idAnggota); if (!u || !u.telepon) return;
-                    const rD = new Date(l.tglHarusKembali); rD.setHours(0, 0, 0, 0);
-                    const dD = Math.round((rD.getTime() - td.getTime()) / (1000 * 60 * 60 * 24));
-                    let sH = '', m = '';
-                    
-                    if (dD === 1) { sH = 'H-1'; m = pM(tH1, u, l, dD); }
-                    else if (dD === 0) { sH = 'Hari H'; m = pM(tH0, u, l, dD); }
-                    else if (dD < 0) { sH = `H+${Math.abs(dD)}`; m = pM(tHP, u, l, dD); }
-                    
-                    if (sH) t.push({ ...l, user: u, statusH: sH, msg: m, diffDays: dD, waUrl: `https://wa.me/${formatWA(u.telepon)}?text=${encodeURIComponent(m)}` });
-                });
-                return t.sort((a, b) => a.diffDays - b.diffDays);
-            }, [peminjaman, anggota, sekolah, tH1, tH0, tHP]);
+    const td = new Date(); 
+    td.setHours(0, 0, 0, 0); 
+    let t = [];
+    
+    // 1. Fungsi penentu waktu sapaan
+    const jam = new Date().getHours();
+    let sapaanWaktu = "Pagi";
+    if (jam >= 11 && jam < 15) sapaanWaktu = "Siang";
+    else if (jam >= 15 && jam < 18) sapaanWaktu = "Sore";
+    else if (jam >= 18) sapaanWaktu = "Malam";
+
+    // 2. Tambahkan replace [SAPAAN] pada fungsi pM
+    const pM = (tp, u, l, d) => tp
+        .replace(/\[NAMA\]/g, u.nama)
+        .replace(/\[SAPAAN\]/g, sapaanWaktu) // Parameter baru
+        .replace(/\[SEKOLAH\]/g, sekolah?.nama || 'Instansi')
+        .replace(/\[JUDUL\]/g, l.judulBuku)
+        .replace(/\[BATAS\]/g, formatDate(l.tglHarusKembali))
+        .replace(/\[HARI_INI\]/g, formatDate(new Date().toISOString().split('T')[0]))
+        .replace(/\[TERLAMBAT\]/g, Math.abs(d));
+    
+    peminjaman.filter(p => p.status === 'Dipinjam').forEach(l => {
+        const u = anggota.find(a => a.id === l.idAnggota); 
+        if (!u || !u.telepon) return;
+        
+        const rD = new Date(l.tglHarusKembali); 
+        rD.setHours(0, 0, 0, 0);
+        const dD = Math.round((rD.getTime() - td.getTime()) / (1000 * 60 * 60 * 24));
+        let sH = '', m = '';
+        
+        if (dD === 1) { sH = 'H-1'; m = pM(tH1, u, l, dD); }
+        else if (dD === 0) { sH = 'Hari H'; m = pM(tH0, u, l, dD); }
+        else if (dD < 0) { sH = `H+${Math.abs(dD)}`; m = pM(tHP, u, l, dD); }
+        
+        if (sH) t.push({ ...l, user: u, statusH: sH, msg: m, diffDays: dD, waUrl: `https://wa.me/${formatWA(u.telepon)}?text=${encodeURIComponent(m)}` });
+    });
+    return t.sort((a, b) => a.diffDays - b.diffDays);
+}, [peminjaman, anggota, sekolah, tH1, tH0, tHP]);
 
             const hB = async () => {
                 if (gTL.length === 0) return showAlert("Kosong", "Tidak ada daftar peminjaman yang perlu dikirim saat ini.", "info");
