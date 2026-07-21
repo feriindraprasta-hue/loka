@@ -2735,7 +2735,185 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
     );
 };
 
+const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfirm, sekolah, onUpdatePengaturan }) => {
+    const [s, setS] = useState(''), [vC, setVC] = useState(''), [sDS, setSDS] = useState(false), [dI, setDI] = useState(sekolah?.dendaHarian || 1000);
+    
+    const [confirmBook, setConfirmBook] = useState(null);
+    // STATE BARU: Untuk kontrol tampilan Splash Screen Berhasil
+    const [showSplash, setShowSplash] = useState(false);
 
+    useEffect(() => { setDI(sekolah?.dendaHarian || 1000); }, [sekolah?.dendaHarian]);
+    
+    useEffect(() => { 
+        const kD = e => { if (e.ctrlKey && e.key.toLowerCase() === 'q') { e.preventDefault(); setSDS(p => !p); } }; 
+        window.addEventListener('keydown', kD); 
+        return () => window.removeEventListener('keydown', kD); 
+    }, []);
+
+    useEffect(() => {
+        const handleEnterConfirm = (e) => {
+            if (confirmBook && e.key === 'Enter') {
+                e.preventDefault();
+                pR(confirmBook, false); 
+                setConfirmBook(null);  
+            }
+        };
+        
+        if (confirmBook) {
+            window.addEventListener('keydown', handleEnterConfirm);
+        }
+        return () => window.removeEventListener('keydown', handleEnterConfirm);
+    }, [confirmBook]);
+
+    const pR = (i, h = false) => {
+        let d = 0; const t = new Date(); const bT = new Date(i.tglHarusKembali); const dhA = sekolah?.dendaHarian || 1000;
+        if (t > bT && !h) d = Math.ceil(Math.abs(t - bT) / (1000 * 60 * 60 * 24)) * dhA;
+        onUpdate(i.id, { status: h ? 'Hilang' : 'Dikembalikan', tglDikembalikan: t.toISOString().split('T')[0], denda: h ? 50000 : d });
+        
+        if (!h) { 
+            const b = buku.find(x => x.id === i.idBuku); 
+            if (b) onUpdateBuku('buku', i.idBuku, { stock: b.stock + 1 }); 
+        }
+        
+        const cbFocus = () => setTimeout(() => document.getElementById('barcodeKembali')?.focus(), 100);
+        
+        // PERUBAHAN: Jika ada denda telat atau hilang, pakai Alert manual. Jika mulus, pakai Splash otomatis.
+        if (d > 0 && !h) {
+            showAlert('Denda!', `Denda telat: Rp ${d.toLocaleString('id-ID')}`, 'warning', cbFocus);
+            setVC('');
+        }
+        else if (h) {
+            showAlert('Hilang', `Denda ganti: Rp 50.000`, 'warning', cbFocus);
+            setVC('');
+        }
+        else {
+            setShowSplash(true);
+            setVC('');
+            // Auto-dismiss setelah 1 detik & Kembalikan Kursor
+            setTimeout(() => {
+                setShowSplash(false);
+                cbFocus();
+            }, 1000);
+        }
+    };
+
+    const hVS = e => {
+        e.preventDefault(); 
+        const sC = vC.trim();
+        const cbFocus = () => setTimeout(() => document.getElementById('barcodeKembali')?.focus(), 100);
+        
+        let aL = data.find(d => d.status === 'Dipinjam' && d.kodeEksemplar && d.kodeEksemplar.toLowerCase() === sC.toLowerCase());
+        if (!aL) {
+             aL = data.find(d => d.status === 'Dipinjam' && ((d.isbn && d.isbn.toLowerCase() === sC.toLowerCase()) || (d.kodeEksemplar && d.kodeEksemplar.toLowerCase().startsWith(sC.toLowerCase() + '-'))));
+        }
+
+        if (aL) {
+            setConfirmBook(aL);
+            document.getElementById('barcodeKembali')?.blur(); 
+        } else {
+            showAlert('Gagal', `Barcode ${sC} tidak ditemukan di daftar peminjaman aktif.`, 'error', cbFocus);
+            setVC('');
+        }
+    };
+
+    return (
+        <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden flex flex-col h-full min-h-[80vh] relative">
+            <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-8 md:p-10 shrink-0">
+                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
+                    <div><h2 className="text-3xl font-black text-white mb-2"><i className="fas fa-barcode-read mr-3 opacity-80"></i> Pengembalian Cepat (Scan)</h2></div>
+                    <div className="bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/30 text-white text-xs font-bold shadow-sm shrink-0">Tarif Denda: Rp {(sekolah?.dendaHarian || 1000).toLocaleString('id-ID')}/hari (Ctrl+Q)</div>
+                </div>
+                {sDS && (
+                    <div className="mb-6 bg-white/20 backdrop-blur-md rounded-2xl p-5 shadow-lg flex justify-between">
+                        <h4 className="text-white font-black text-lg">Ubah Denda</h4>
+                        <div className="flex gap-2">
+                            <input type="number" className="w-32 px-4 py-2 rounded-xl text-slate-800 font-black focus:outline-none" value={dI} onChange={e => setDI(e.target.value)} />
+                            <button onClick={() => { onUpdatePengaturan({ ...sekolah, dendaHarian: parseInt(dI) || 0 }); setSDS(false); }} className="bg-emerald-800 text-white px-4 py-2 rounded-xl font-bold">Simpan</button>
+                        </div>
+                    </div>
+                )}
+                <form onSubmit={hVS} className="max-w-2xl relative">
+                    <input id="barcodeKembali" type="text" placeholder="Scan Barcode..." className="w-full px-6 py-5 rounded-2xl text-xl font-mono font-bold text-slate-800 shadow-2xl focus:outline-none focus:ring-4 focus:ring-emerald-300/30" value={vC} onChange={e => setVC(e.target.value)} autoFocus required />
+                    <button type="submit" className="absolute right-3 top-3 bottom-3 px-6 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-colors">Cek</button>
+                </form>
+            </div>
+            
+            <div className="p-6 md:p-8 flex-1 flex flex-col">
+                <div className="overflow-x-auto w-full border border-slate-200 rounded-2xl flex-1 custom-scrollbar">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[11px] sticky top-0 z-10">
+                            <tr><th className="py-4 px-6 rounded-tl-2xl">Identitas</th><th className="py-4 px-6">Buku & Barcode</th><th className="py-4 px-6">Status Waktu</th><th className="py-4 px-6 text-right rounded-tr-2xl">Aksi Manual</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {data.filter(d => d.status === 'Dipinjam').map(i => {
+                                const iL = new Date() > new Date(i.tglHarusKembali);
+                                return (
+                                    <tr key={i.id} className="hover:bg-slate-50/50">
+                                        <td className="py-4 px-6 font-black text-slate-800">{i.namaPeminjam}</td>
+                                        <td className="py-4 px-6"><p className="font-semibold">{i.judulBuku}</p><span className="text-[10px] font-mono bg-slate-100 px-2 py-0.5 rounded">{i.kodeEksemplar || i.isbn}</span>{i.isPaket && <span className="ml-2 text-[9px] font-black bg-purple-100 text-purple-600 px-2 py-0.5 rounded uppercase">Paket</span>}</td>
+                                        <td className="py-4 px-6">{iL ? <span className="text-rose-600 bg-rose-50 px-3 py-1.5 rounded-lg text-xs font-black uppercase">Terlambat</span> : <span className="text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-black uppercase">Aman</span>}<div className="text-[11px] text-slate-400 font-bold mt-2">Batas: {new Date(i.tglHarusKembali).toLocaleDateString('id-ID')}</div></td>
+                                        <td className="py-4 px-6">
+                                            <div className="flex justify-end gap-2">
+                                                <button onClick={() => pR(i, false)} className="px-4 py-2 text-xs font-bold bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-colors">Kembali</button>
+                                                <button onClick={() => pR(i, true)} className="px-4 py-2 text-xs font-bold bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors">Hilang</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* MODAL KONFIRMASI LOKAL YANG MENDUKUNG TOMBOL ENTER */}
+            {confirmBook && (
+                <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-[2rem] p-8 max-w-md w-full text-center shadow-2xl animate-[bounceIn_0.3s_ease-out]">
+                        <div className="w-16 h-16 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+                            <i className="fas fa-check-circle"></i>
+                        </div>
+                        <h3 className="text-2xl font-black text-slate-800 mb-2">Konfirmasi Pengembalian</h3>
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-left mb-6 mt-4">
+                            <p className="text-sm text-slate-500 mb-1">Peminjam:</p>
+                            <p className="font-bold text-slate-800 mb-3">{confirmBook.namaPeminjam}</p>
+                            <p className="text-sm text-slate-500 mb-1">Buku:</p>
+                            <p className="font-bold text-slate-800 leading-tight">{confirmBook.judulBuku}</p>
+                        </div>
+                        <div className="flex gap-3 justify-center">
+                            <button 
+                                onClick={() => { setConfirmBook(null); setTimeout(() => document.getElementById('barcodeKembali')?.focus(), 100); }} 
+                                className="px-6 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+                            >
+                                Batal
+                            </button>
+                            <button 
+                                onClick={() => { pR(confirmBook, false); setConfirmBook(null); }} 
+                                className="px-6 py-3 bg-teal-500 hover:bg-teal-600 text-white font-bold rounded-xl shadow-lg shadow-teal-200 flex items-center gap-2 transition-colors"
+                            >
+                                Ya, Lanjutkan <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] uppercase">Enter ↵</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* SPLASH SCREEN KHUSUS BERHASIL (Auto-Dismiss) */}
+            {showSplash && (
+                <div className="fixed inset-0 bg-slate-900/40 z-[99999] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl p-8 max-w-[280px] w-full text-center shadow-2xl animate-[zoomIn_0.2s_ease-out]">
+                        <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg shadow-emerald-200">
+                            <i className="fas fa-check"></i>
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 mb-1">Berhasil</h3>
+                        <p className="text-sm font-medium text-slate-400">Buku dikembalikan!</p>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+        
         const PeringatanView = ({ peminjaman, anggota, sekolah, onUpdatePengaturan, showConfirm, showAlert }) => {
             const [iS, setIS] = useState(false), [pG, setPG] = useState(0), [sTS, setSTS] = useState(false);
             const dH1 = `Assalamu'alaikum\nSelamat Pagi *[NAMA]*\n\nKami dari *[SEKOLAH]* menyampaikan buku *"[JUDUL]"* berlaku sampai *[BATAS]*.\n\n_#sistem_`, 
