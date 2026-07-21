@@ -2452,13 +2452,11 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
     const [f, setF] = useState({ idA: '', kodeEksemplar: '', tgl: new Date().toISOString().split('T')[0], lama: 7, isPaket: false });
     const [sQ, setSQ] = useState(''), [sD, setSD] = useState(false), [sA, setSA] = useState(null), [sL, setSL] = useState(null), [iE, setIE] = useState(false), [eF, setEF] = useState({ tglPinjam: '', tglHarusKembali: '' });
 
-    // ==========================================
-    // PERUBAHAN 1: Tambahkan useRef dan useEffect
-    // ==========================================
+    // STATE BARU: Untuk kontrol tampilan Splash Screen Berhasil
+    const [showSplash, setShowSplash] = useState(false);
+
     const anggotaRef = useRef(null);
 
-    // Auto-focus ke pencarian anggota saat pertama kali render, 
-    // atau ketika data anggota dibatalkan (sA menjadi null)
     useEffect(() => {
         if (!sA) {
             setTimeout(() => {
@@ -2467,14 +2465,12 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         }
     }, [sA]);
 
-    // PERUBAHAN 2: Tangkap tombol Enter dari Scanner
     const handleAnggotaKeyDown = (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
         }
     };
-    // ==========================================
 
     const dAnggota = anggota || [];
     const dBuku = buku || [];
@@ -2572,9 +2568,17 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             }
         } catch (e) { console.error("Gagal update stok:", e); }
         
-        setF({ ...f, kodeEksemplar: '' });
-        if (inputEl) inputEl.value = ''; 
-        showAlert('Berhasil', "Sirkulasi dicatat!", 'success', cbFocus);
+        // PERUBAHAN: Tampilkan Splash Screen sukses
+        setShowSplash(true);
+        if (inputEl) inputEl.value = '';
+        
+        // Auto-dismiss setelah 1 detik & Kosongkan Identitas Peminjam
+        setTimeout(() => {
+            setShowSplash(false);
+            setSA(null);
+            setF(prev => ({ ...prev, idA: '', kodeEksemplar: '' }));
+            setTimeout(() => { if (anggotaRef.current) anggotaRef.current.focus(); }, 100);
+        }, 1000);
     };
 
     const oM = l => { setSL(l); setEF({ tglPinjam: l.tglPinjam, tglHarusKembali: l.tglHarusKembali }); setIE(false); };
@@ -2601,13 +2605,12 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                         ) : (
                             <div className="relative">
                                 <i className="fas fa-search absolute left-4 top-3.5 text-indigo-400"></i>
-                                {/* PERUBAHAN 3: Menyisipkan ref dan onKeyDown ke input peminjam */}
                                 <input 
                                     type="text" 
                                     ref={anggotaRef}
                                     onKeyDown={handleAnggotaKeyDown}
                                     placeholder="Ketik/Scan..." 
-                                    className="input-field pl-11" 
+                                    className="w-full bg-slate-50 border border-slate-200 pl-11 pr-4 py-3 rounded-xl font-bold focus:ring-2 focus:ring-indigo-200 focus:outline-none" 
                                     value={sQ} 
                                     onChange={hSC} 
                                     onFocus={() => setSD(true)} 
@@ -2630,12 +2633,17 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     </div>
                     <div>
                         <label className="block text-sm font-bold mb-1.5">Scan Barcode Buku</label>
-                        {/* PERUBAHAN 4: Menghapus atribut 'autoFocus' agar kursor awal tetap di atas */}
-                        <input id="barcodeInput" type="text" className="input-field border-indigo-300 bg-indigo-50 font-mono font-bold" value={f.kodeEksemplar} onChange={e => setF({ ...f, kodeEksemplar: e.target.value })} required />
+                        <input id="barcodeInput" type="text" className="w-full bg-indigo-50 border border-indigo-300 px-4 py-3 rounded-xl font-mono font-bold focus:ring-2 focus:ring-indigo-200 focus:outline-none" value={f.kodeEksemplar} onChange={e => setF({ ...f, kodeEksemplar: e.target.value })} required />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <Input label="Tgl Pinjam" type="date" value={f.tgl} onChange={e => setF({ ...f, tgl: e.target.value })} required={true} />
-                        <Input label="Batas (Hari)" type="number" value={f.isPaket ? 365 : f.lama} onChange={e => setF({ ...f, lama: e.target.value })} required={!f.isPaket} disabled={f.isPaket} />
+                        <div>
+                            <label className="block text-sm font-bold mb-1.5">Tgl Pinjam</label>
+                            <input type="date" className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl font-bold focus:outline-none" value={f.tgl} onChange={e => setF({ ...f, tgl: e.target.value })} required />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold mb-1.5">Batas (Hari)</label>
+                            <input type="number" className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl font-bold focus:outline-none disabled:opacity-50" value={f.isPaket ? 365 : f.lama} onChange={e => setF({ ...f, lama: e.target.value })} required={!f.isPaket} disabled={f.isPaket} />
+                        </div>
                     </div>
                     <label className="flex items-center gap-3 p-3 mt-2 mb-4 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
                         <input type="checkbox" checked={f.isPaket} onChange={e => setF({ ...f, isPaket: e.target.checked })} className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
@@ -2644,13 +2652,13 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                             <span className="text-[10px] font-medium text-slate-500">Masa pinjam otomatis 1 Tahun Ajaran</span>
                         </div>
                     </label>
-                    <button type="submit" className="btn-primary w-full py-4 text-lg">Setujui</button>
+                    <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-xl shadow-lg transition-colors text-lg">Setujui</button>
                 </form>
             </div>
-            {/* ... (Bagian Tabel dan Modal di bawahnya tidak saya ubah, tetap sama persis seperti kode asli Anda) ... */}
+            
             <div className="lg:col-span-2 bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden flex flex-col h-full min-h-[60vh]">
                 <div className="p-6 md:p-8 border-b"><h3 className="text-xl font-bold">Daftar Pinjaman Berjalan</h3></div>
-                <div className="overflow-x-auto p-4 flex-1">
+                <div className="overflow-x-auto p-4 flex-1 custom-scrollbar">
                     <table className="w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-indigo-50/50 text-indigo-600 font-bold uppercase text-[11px] rounded-xl">
                             <tr><th className="py-4 px-6 rounded-l-2xl">Peminjam</th><th className="py-4 px-6">Buku & Kode</th><th className="py-4 px-6">Batas Waktu</th><th className="py-4 px-6 text-right rounded-r-2xl">Aksi</th></tr>
@@ -2660,47 +2668,63 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                                 <tr key={i.id} className="hover:bg-slate-50/80 group">
                                     <td className="py-4 px-6"><span onClick={() => oM(i)} className="font-bold cursor-pointer hover:text-indigo-600">{i.namaPeminjam}</span></td>
                                     <td className="py-4 px-6"><p className="font-semibold">{i.judulBuku}</p><span className="text-[10px] font-mono bg-slate-100 px-2 py-0.5 rounded">{i.kodeEksemplar || i.isbn}</span>{i.isPaket && <span className="ml-2 text-[9px] font-black bg-purple-100 text-purple-600 px-2 py-0.5 rounded uppercase">Paket</span>}</td>
-                                    <td className="py-4 px-6"><span className="px-3 py-1.5 font-black rounded-lg bg-red-50 text-red-600 border border-red-100">{formatDate(i.tglHarusKembali)}</span></td>
-                                    <td className="py-4 px-6 flex justify-end opacity-100 md:opacity-0 group-hover:opacity-100"><button onClick={() => oM(i)} className="w-8 h-8 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center"><i className="fas fa-edit"></i></button></td>
+                                    <td className="py-4 px-6"><span className="px-3 py-1.5 font-black rounded-lg bg-red-50 text-red-600 border border-red-100">{new Date(i.tglHarusKembali).toLocaleDateString('id-ID')}</span></td>
+                                    <td className="py-4 px-6 flex justify-end opacity-100 md:opacity-0 group-hover:opacity-100"><button onClick={() => oM(i)} className="w-8 h-8 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center hover:bg-blue-100"><i className="fas fa-edit"></i></button></td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
             </div>
+
+            {/* MODAL DETAIL (Tidak diubah) */}
             {sL && (
                 <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-4" onClick={() => setSL(null)}>
                     <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md p-8 animate-[bounceIn_0.3s_ease-out]" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center border-b pb-4 mb-5"><h3 className="text-xl font-black"><i className="fas fa-info-circle text-indigo-500 mr-2"></i> Detail Pinjaman</h3><button onClick={() => setSL(null)} className="w-8 h-8 bg-slate-100 rounded-full"><i className="fas fa-times"></i></button></div>
+                        <div className="flex justify-between items-center border-b pb-4 mb-5"><h3 className="text-xl font-black"><i className="fas fa-info-circle text-indigo-500 mr-2"></i> Detail Pinjaman</h3><button onClick={() => setSL(null)} className="w-8 h-8 bg-slate-100 rounded-full hover:bg-slate-200"><i className="fas fa-times"></i></button></div>
                         <div className="space-y-5">
                             <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Identitas Peminjam</p><p className="text-lg font-black text-indigo-900">{sL.namaPeminjam}</p></div>
                             <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Buku yang Dipinjam</p><p className="text-base font-bold text-slate-800 leading-tight">{sL.judulBuku}</p><div className="mt-1.5 inline-flex items-center gap-2 bg-slate-100 px-2.5 py-1 rounded border border-slate-200"><i className="fas fa-barcode text-slate-400 text-xs"></i><p className="text-xs font-mono font-bold text-slate-600">{sL.kodeEksemplar || sL.isbn}</p></div></div>
                             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border">
-                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Tanggal Pinjam</p>{iE ? (<input type="date" className="w-full text-xs font-bold bg-white border rounded p-1.5" value={eF.tglPinjam} onChange={e => setEF({ ...eF, tglPinjam: e.target.value })} />) : (<p className="text-sm font-bold">{formatDate(sL.tglPinjam)}</p>)}</div>
-                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Batas Kembali</p>{iE ? (<input type="date" className="w-full text-xs font-bold text-rose-600 bg-white border rounded p-1.5" value={eF.tglHarusKembali} onChange={e => setEF({ ...eF, tglHarusKembali: e.target.value })} />) : (<p className="text-sm font-bold text-rose-600">{formatDate(sL.tglHarusKembali)}</p>)}</div>
+                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Tanggal Pinjam</p>{iE ? (<input type="date" className="w-full text-xs font-bold bg-white border rounded p-1.5" value={eF.tglPinjam} onChange={e => setEF({ ...eF, tglPinjam: e.target.value })} />) : (<p className="text-sm font-bold">{new Date(sL.tglPinjam).toLocaleDateString('id-ID')}</p>)}</div>
+                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Batas Kembali</p>{iE ? (<input type="date" className="w-full text-xs font-bold text-rose-600 bg-white border rounded p-1.5" value={eF.tglHarusKembali} onChange={e => setEF({ ...eF, tglHarusKembali: e.target.value })} />) : (<p className="text-sm font-bold text-rose-600">{new Date(sL.tglHarusKembali).toLocaleDateString('id-ID')}</p>)}</div>
                             </div>
                             <div className="flex justify-between items-center pt-2"><p className="text-sm font-bold text-slate-500">Status Saat Ini:</p><span className="inline-block px-4 py-2 font-black rounded-xl bg-amber-50 text-amber-600 border border-amber-100 text-xs uppercase shadow-sm">{sL.status}</span></div>
                         </div>
                         <div className="mt-8 pt-5 border-t flex justify-between gap-3">
-                            <button onClick={hCT} className="px-4 py-2 bg-rose-50 text-rose-600 font-bold text-xs rounded-xl border border-rose-100"><i className="fas fa-trash-alt mr-2"></i> Batalkan</button>
+                            <button onClick={hCT} className="px-4 py-2 bg-rose-50 text-rose-600 font-bold text-xs rounded-xl border border-rose-100 hover:bg-rose-100"><i className="fas fa-trash-alt mr-2"></i> Batalkan</button>
                             {iE ? (
                                 <div className="flex gap-2"><button onClick={() => setIE(false)} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl">Batal</button><button onClick={hSE} className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-md"><i className="fas fa-save mr-2"></i> Simpan</button></div>
                             ) : (
-                                <button onClick={() => setIE(true)} className="px-4 py-2 bg-blue-50 text-blue-600 font-bold text-xs rounded-xl border border-blue-100"><i className="fas fa-edit mr-2"></i> Edit Tanggal</button>
+                                <button onClick={() => setIE(true)} className="px-4 py-2 bg-blue-50 text-blue-600 font-bold text-xs rounded-xl border border-blue-100 hover:bg-blue-100"><i className="fas fa-edit mr-2"></i> Edit Tanggal</button>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* SPLASH SCREEN KHUSUS BERHASIL (Auto-Dismiss) */}
+            {showSplash && (
+                <div className="fixed inset-0 bg-slate-900/40 z-[99999] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl p-8 max-w-[280px] w-full text-center shadow-2xl animate-[zoomIn_0.2s_ease-out]">
+                        <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg shadow-emerald-200">
+                            <i className="fas fa-check"></i>
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 mb-1">Berhasil</h3>
+                        <p className="text-sm font-medium text-slate-400">Sirkulasi dicatat!</p>
                     </div>
                 </div>
             )}
         </div>
     );
 };
-    
-        const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfirm, sekolah, onUpdatePengaturan }) => {
+
+const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfirm, sekolah, onUpdatePengaturan }) => {
     const [s, setS] = useState(''), [vC, setVC] = useState(''), [sDS, setSDS] = useState(false), [dI, setDI] = useState(sekolah?.dendaHarian || 1000);
     
-    // STATE BARU: Untuk menyimpan data buku yang sedang menunggu konfirmasi pengembalian
     const [confirmBook, setConfirmBook] = useState(null);
+    // STATE BARU: Untuk kontrol tampilan Splash Screen Berhasil
+    const [showSplash, setShowSplash] = useState(false);
 
     useEffect(() => { setDI(sekolah?.dendaHarian || 1000); }, [sekolah?.dendaHarian]);
     
@@ -2710,14 +2734,12 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         return () => window.removeEventListener('keydown', kD); 
     }, []);
 
-    // LOGIKA BARU: Pendeteksi tombol "Enter" saat pop-up konfirmasi muncul
     useEffect(() => {
         const handleEnterConfirm = (e) => {
-            // Jika ada buku yang menunggu konfirmasi dan tombol yang ditekan adalah Enter
             if (confirmBook && e.key === 'Enter') {
                 e.preventDefault();
-                pR(confirmBook, false); // Proses pengembalian
-                setConfirmBook(null);   // Tutup pop-up
+                pR(confirmBook, false); 
+                setConfirmBook(null);  
             }
         };
         
@@ -2738,11 +2760,25 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         }
         
         const cbFocus = () => setTimeout(() => document.getElementById('barcodeKembali')?.focus(), 100);
-        if (d > 0 && !h) showAlert('Denda!', `Denda telat: Rp ${d.toLocaleString('id-ID')}`, 'warning', cbFocus);
-        else if (h) showAlert('Hilang', `Denda ganti: Rp 50.000`, 'warning', cbFocus);
-        else showAlert('Sukses', `Buku dikembalikan.`, 'success', cbFocus);
         
-        setVC('');
+        // PERUBAHAN: Jika ada denda telat atau hilang, pakai Alert manual. Jika mulus, pakai Splash otomatis.
+        if (d > 0 && !h) {
+            showAlert('Denda!', `Denda telat: Rp ${d.toLocaleString('id-ID')}`, 'warning', cbFocus);
+            setVC('');
+        }
+        else if (h) {
+            showAlert('Hilang', `Denda ganti: Rp 50.000`, 'warning', cbFocus);
+            setVC('');
+        }
+        else {
+            setShowSplash(true);
+            setVC('');
+            // Auto-dismiss setelah 1 detik & Kembalikan Kursor
+            setTimeout(() => {
+                setShowSplash(false);
+                cbFocus();
+            }, 1000);
+        }
     };
 
     const hVS = e => {
@@ -2756,13 +2792,12 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         }
 
         if (aL) {
-            // PERUBAHAN: Tampilkan pop-up konfirmasi lokal alih-alih fungsi bawaan
             setConfirmBook(aL);
-            document.getElementById('barcodeKembali')?.blur(); // Hilangkan fokus dari input agar tidak terketik ganda
+            document.getElementById('barcodeKembali')?.blur(); 
         } else {
             showAlert('Gagal', `Barcode ${sC} tidak ditemukan di daftar peminjaman aktif.`, 'error', cbFocus);
+            setVC('');
         }
-        setVC('');
     };
 
     return (
@@ -2776,22 +2811,22 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     <div className="mb-6 bg-white/20 backdrop-blur-md rounded-2xl p-5 shadow-lg flex justify-between">
                         <h4 className="text-white font-black text-lg">Ubah Denda</h4>
                         <div className="flex gap-2">
-                            <input type="number" className="w-32 px-4 py-2 rounded-xl text-slate-800 font-black" value={dI} onChange={e => setDI(e.target.value)} />
+                            <input type="number" className="w-32 px-4 py-2 rounded-xl text-slate-800 font-black focus:outline-none" value={dI} onChange={e => setDI(e.target.value)} />
                             <button onClick={() => { onUpdatePengaturan({ ...sekolah, dendaHarian: parseInt(dI) || 0 }); setSDS(false); }} className="bg-emerald-800 text-white px-4 py-2 rounded-xl font-bold">Simpan</button>
                         </div>
                     </div>
                 )}
                 <form onSubmit={hVS} className="max-w-2xl relative">
-                    <input id="barcodeKembali" type="text" placeholder="Scan Barcode..." className="w-full px-6 py-5 rounded-2xl text-xl font-mono font-bold text-slate-800 shadow-2xl focus:outline-none" value={vC} onChange={e => setVC(e.target.value)} autoFocus required />
-                    <button type="submit" className="absolute right-3 top-3 bottom-3 px-6 bg-slate-800 text-white rounded-xl font-bold">Cek</button>
+                    <input id="barcodeKembali" type="text" placeholder="Scan Barcode..." className="w-full px-6 py-5 rounded-2xl text-xl font-mono font-bold text-slate-800 shadow-2xl focus:outline-none focus:ring-4 focus:ring-emerald-300/30" value={vC} onChange={e => setVC(e.target.value)} autoFocus required />
+                    <button type="submit" className="absolute right-3 top-3 bottom-3 px-6 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-colors">Cek</button>
                 </form>
             </div>
             
             <div className="p-6 md:p-8 flex-1 flex flex-col">
-                <div className="overflow-x-auto w-full border border-slate-200 rounded-2xl flex-1">
-                    <table className="w-full text-left text-sm">
+                <div className="overflow-x-auto w-full border border-slate-200 rounded-2xl flex-1 custom-scrollbar">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[11px] sticky top-0 z-10">
-                            <tr><th className="py-4 px-6">Identitas</th><th className="py-4 px-6">Buku & Barcode</th><th className="py-4 px-6">Status Waktu</th><th className="py-4 px-6 text-right">Aksi Manual</th></tr>
+                            <tr><th className="py-4 px-6 rounded-tl-2xl">Identitas</th><th className="py-4 px-6">Buku & Barcode</th><th className="py-4 px-6">Status Waktu</th><th className="py-4 px-6 text-right rounded-tr-2xl">Aksi Manual</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {data.filter(d => d.status === 'Dipinjam').map(i => {
@@ -2800,11 +2835,11 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                                     <tr key={i.id} className="hover:bg-slate-50/50">
                                         <td className="py-4 px-6 font-black text-slate-800">{i.namaPeminjam}</td>
                                         <td className="py-4 px-6"><p className="font-semibold">{i.judulBuku}</p><span className="text-[10px] font-mono bg-slate-100 px-2 py-0.5 rounded">{i.kodeEksemplar || i.isbn}</span>{i.isPaket && <span className="ml-2 text-[9px] font-black bg-purple-100 text-purple-600 px-2 py-0.5 rounded uppercase">Paket</span>}</td>
-                                        <td className="py-4 px-6">{iL ? <span className="text-rose-600 bg-rose-50 px-3 py-1.5 rounded-lg text-xs font-black uppercase">Terlambat</span> : <span className="text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-black uppercase">Aman</span>}<div className="text-[11px] text-slate-400 font-bold mt-2">Batas: {formatDate(i.tglHarusKembali)}</div></td>
+                                        <td className="py-4 px-6">{iL ? <span className="text-rose-600 bg-rose-50 px-3 py-1.5 rounded-lg text-xs font-black uppercase">Terlambat</span> : <span className="text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-black uppercase">Aman</span>}<div className="text-[11px] text-slate-400 font-bold mt-2">Batas: {new Date(i.tglHarusKembali).toLocaleDateString('id-ID')}</div></td>
                                         <td className="py-4 px-6">
                                             <div className="flex justify-end gap-2">
-                                                <button onClick={() => pR(i, false)} className="px-4 py-2 text-xs font-bold bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-emerald-50 hover:text-emerald-600">Kembali</button>
-                                                <button onClick={() => pR(i, true)} className="px-4 py-2 text-xs font-bold bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-600">Hilang</button>
+                                                <button onClick={() => pR(i, false)} className="px-4 py-2 text-xs font-bold bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-colors">Kembali</button>
+                                                <button onClick={() => pR(i, true)} className="px-4 py-2 text-xs font-bold bg-white text-slate-600 border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors">Hilang</button>
                                             </div>
                                         </td>
                                     </tr>
@@ -2817,7 +2852,7 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
 
             {/* MODAL KONFIRMASI LOKAL YANG MENDUKUNG TOMBOL ENTER */}
             {confirmBook && (
-                <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-[2rem] p-8 max-w-md w-full text-center shadow-2xl animate-[bounceIn_0.3s_ease-out]">
                         <div className="w-16 h-16 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
                             <i className="fas fa-check-circle"></i>
@@ -2832,13 +2867,13 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                         <div className="flex gap-3 justify-center">
                             <button 
                                 onClick={() => { setConfirmBook(null); setTimeout(() => document.getElementById('barcodeKembali')?.focus(), 100); }} 
-                                className="px-6 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200"
+                                className="px-6 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
                             >
                                 Batal
                             </button>
                             <button 
                                 onClick={() => { pR(confirmBook, false); setConfirmBook(null); }} 
-                                className="px-6 py-3 bg-teal-500 hover:bg-teal-600 text-white font-bold rounded-xl shadow-lg shadow-teal-200 flex items-center gap-2"
+                                className="px-6 py-3 bg-teal-500 hover:bg-teal-600 text-white font-bold rounded-xl shadow-lg shadow-teal-200 flex items-center gap-2 transition-colors"
                             >
                                 Ya, Lanjutkan <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] uppercase">Enter ↵</span>
                             </button>
@@ -2846,10 +2881,22 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     </div>
                 </div>
             )}
+
+            {/* SPLASH SCREEN KHUSUS BERHASIL (Auto-Dismiss) */}
+            {showSplash && (
+                <div className="fixed inset-0 bg-slate-900/40 z-[99999] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl p-8 max-w-[280px] w-full text-center shadow-2xl animate-[zoomIn_0.2s_ease-out]">
+                        <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg shadow-emerald-200">
+                            <i className="fas fa-check"></i>
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 mb-1">Berhasil</h3>
+                        <p className="text-sm font-medium text-slate-400">Buku dikembalikan!</p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
-
         const PeringatanView = ({ peminjaman, anggota, sekolah, onUpdatePengaturan, showConfirm, showAlert }) => {
             const [iS, setIS] = useState(false), [pG, setPG] = useState(0), [sTS, setSTS] = useState(false);
             const dH1 = `Assalamu'alaikum\nSelamat Pagi *[NAMA]*\n\nKami dari *[SEKOLAH]* menyampaikan buku *"[JUDUL]"* berlaku sampai *[BATAS]*.\n\n_#sistem_`, 
