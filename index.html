@@ -859,6 +859,73 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
                 </div>
             );
         };
+
+        const PrintLabelSisaView = ({ items, sekolah, onClose }) => {
+            const [page, setPage] = useState(1);
+            const limit = 50;
+
+            const totalPages = Math.ceil(items.length / limit) || 1;
+            const currentBatch = items.slice((page - 1) * limit, page * limit);
+
+            return (
+                <div id="print-area" className="relative min-h-screen bg-slate-100 pb-10">
+                    <div className="print:hidden fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 flex justify-between items-center shadow-2xl z-[99999]">
+                        <div className="flex items-center gap-4">
+                            <button onClick={onClose} className="w-10 h-10 shrink-0 bg-slate-800 hover:bg-rose-600 rounded-full flex justify-center items-center transition-colors"><i className="fas fa-arrow-left"></i></button>
+                            <div>
+                                <h3 className="font-black text-sm uppercase tracking-widest text-indigo-400">Cetak Label Tersisa</h3>
+                                <p className="text-xs font-bold text-slate-300">Total: {items.length} Barcode</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 bg-slate-800 p-1.5 rounded-xl border border-slate-700">
+                            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="w-10 h-10 bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-indigo-600 flex justify-center items-center font-bold transition-all"><i className="fas fa-chevron-left"></i></button>
+                            <div className="px-4 text-center font-black"><span className="text-xl">{page}</span> <span className="text-slate-500 text-sm">/ {totalPages}</span></div>
+                            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="w-10 h-10 bg-slate-700 disabled:opacity-30 rounded-lg hover:bg-indigo-600 flex justify-center items-center font-bold transition-all"><i className="fas fa-chevron-right"></i></button>
+                        </div>
+                        <button onClick={() => window.print()} className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black px-6 py-2.5 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.4)] flex items-center gap-2 transition-all active:scale-95">
+                            <i className="fas fa-print"></i> Cetak Batch {page}
+                        </button>
+                    </div>
+
+                    <div className="pt-24 print:pt-0">
+                        <style>{`
+                            @media print {
+                                @page { size: A4 portrait; margin: 10mm; }
+                                body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
+                                #print-area { padding: 0 !important; }
+                            }
+                            #print-area { font-family: 'Plus Jakarta Sans', sans-serif; width: 100%; min-height: 100vh; box-sizing: border-box; padding: 10mm; }
+                            .print-container { display: flex; flex-wrap: wrap; gap: 5mm; justify-content: center; align-content: flex-start; width: 100%; }
+                            .label-wrapper { display: flex; align-items: center; gap: 2mm; padding: 2.5mm; border: 1.5px dashed #cbd5e1; border-radius: 10px; width: 88mm; break-inside: avoid; page-break-inside: avoid; background: #fff; }
+                            .barcode-part { width: 45mm; height: 30mm; border: 1px solid #94a3b8; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+                            .barcode-header { background-color: #4f46e5 !important; color: #fff !important; font-size: 7pt; font-weight: 800; text-align: center; padding: 3px 4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .5px; }
+                            .barcode-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; }
+                            .barcode-copy { font-size: 6pt; font-weight: 700; margin-top: 1px; color: #64748b; }
+                            .spine-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #fdf8ea !important; display: flex; align-items: center; justify-content: center; padding: 2px; text-align: center; font-size: 7.5pt; font-weight: 900; line-height: 1.3; color: #0f172a; }
+                            .fold-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #ffffff !important; display: flex; align-items: center; justify-content: center; }
+                        `}</style>
+                        
+                        <div className="print-container">
+                            {currentBatch.map((i, idx) => (
+                                <div key={idx} className="label-wrapper">
+                                    <div className="fold-part"></div>
+                                    <div className="spine-part" style={{ whiteSpace: 'pre-line' }}>{i.spineCallNumber}</div>
+                                    <div className="barcode-part">
+                                        <div className="barcode-header">{sekolah.nama || 'PERPUSTAKAAN'}</div>
+                                        <div className="barcode-body">
+                                            <div style={{ display: 'flex', justifyContent: 'center', width: '100%', padding: '8px 0', margin: '2px 0' }}>
+                                                <img src={`https://barcodeapi.org/api/128/${(i.isbn || '').replace(/\D/g, '')}-${i.copyNum}`} alt="barcode" style={{ height: '50px', width: '100%', maxWidth: '5cm', objectFit: 'fill' }} />
+                                            </div>        
+                                            <div className="barcode-copy">EKS {i.copyNum}/{i.totalCopies}</div>
+                                        </div>
+                                    </div>
+                                </div>                                       
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
         
         const RekapView = ({ kehadiran, peminjaman, anggota, onPrint, filter, setFilter, sekolah }) => {
             const uKlsLengkap = useMemo(() => [...new Set(anggota.filter(d => d.kategori === 'Siswa').map(d => formatKelasSiswa(d, sekolah?.daftarJurusan)).filter(Boolean))].sort(), [anggota, sekolah]);
@@ -1568,7 +1635,174 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
                 </div>
             );
         };
+const AuditEksemplarView = ({ buku, peminjaman, onPrintSisa }) => {
+            const [search, setSearch] = useState('');
+            const [selectedBook, setSelectedBook] = useState(null);
 
+            // Filter buku untuk pencarian
+            const filteredBuku = useMemo(() => {
+                if (!search) return buku.slice(0, 10); 
+                return buku.filter(b => 
+                    b.status !== 'Direduksi' && 
+                    (b.judul.toLowerCase().includes(search.toLowerCase()) || 
+                    (b.isbn && b.isbn.includes(search)) || 
+                    (b.noInduk && b.noInduk.toLowerCase().includes(search.toLowerCase())))
+                ).slice(0, 20);
+            }, [buku, search]);
+
+            // LOGIKA PINTAR AUDIT EKSEMPLAR (MENGGUNAKAN STOK AWAL)
+            const detailEksemplar = useMemo(() => {
+                if (!selectedBook) return null;
+                
+                // 1. Dapatkan semua peminjaman aktif untuk buku ini
+                const activeLoans = peminjaman.filter(p => p.idBuku === selectedBook.id && p.status === 'Dipinjam');
+                
+                // 2. Ekstrak nomor eksemplar yang sedang dipinjam
+                const borrowedCopies = activeLoans.map(loan => {
+                    const parts = (loan.kodeEksemplar || '').split('-');
+                    return parseInt(parts[parts.length - 1]) || 1;
+                });
+
+                // 3. Ambil Total Fisik Sebenarnya dari "Stok Awal"
+                // (Fallback ke perhitungan lama jika buku lama belum di-edit stok awalnya)
+                const totalFisik = parseInt(selectedBook.stockAwal) || ((parseInt(selectedBook.stock) || 0) + activeLoans.length);
+                
+                // 4. Cari eksemplar yang tersedia (dari 1 sampai Total Fisik)
+                const availableCopies = [];
+                for (let i = 1; i <= totalFisik; i++) {
+                    if (!borrowedCopies.includes(i)) {
+                        availableCopies.push(i);
+                    }
+                }
+
+                return { 
+                    borrowed: borrowedCopies, 
+                    available: availableCopies, 
+                    loans: activeLoans,
+                    tersedia: availableCopies.length, // Sisa real di rak berdasarkan perhitungan
+                    totalFisik: totalFisik
+                };
+            }, [selectedBook, peminjaman]);
+
+            const handlePrintAvailable = () => {
+                if (!selectedBook || !detailEksemplar) return;
+                
+                const sL = [selectedBook.kodeLabel ? selectedBook.kodeLabel : getDDC(selectedBook.klasifikasiDDC), getAuthorCode(selectedBook.pengarang), getTitleCode(selectedBook.judul)].filter(Boolean);
+                
+                const itemsToPrint = detailEksemplar.available.map(copyNum => ({
+                    ...selectedBook,
+                    copyNum: copyNum,
+                    totalCopies: detailEksemplar.totalFisik,
+                    spineCallNumber: [...sL, selectedBook.lokasiRak ? selectedBook.lokasiRak : `c.${copyNum}`].join('\n')
+                }));
+
+                onPrintSisa(itemsToPrint);
+            };
+
+            return (
+                <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden min-h-[75vh] flex flex-col">
+                    <div className="p-8 md:p-10 border-b bg-gradient-to-r from-teal-50 to-emerald-50">
+                        <h2 className="text-3xl font-black text-teal-900 mb-3"><i className="fas fa-clipboard-check text-teal-500 mr-3"></i> Audit & Cek Sisa Eksemplar</h2>
+                        <p className="text-slate-600 font-medium">Lacak urutan buku paket/koleksi yang belum terpinjam dan cetak barcodenya kembali jika hilang/rusak.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-0 flex-1">
+                        {/* Kiri: Pencarian Buku */}
+                        <div className="p-8 border-r border-slate-100 flex flex-col h-[500px]">
+                            <div className="relative mb-6 shrink-0">
+                                <i className="fas fa-search absolute left-4 top-3.5 text-teal-400"></i>
+                                <input type="text" placeholder="Cari Judul, ISBN, atau No Induk..." className="w-full bg-slate-50 border border-slate-200 pl-11 pr-4 py-3 rounded-xl font-bold focus:ring-2 focus:ring-teal-200" value={search} onChange={e => setSearch(e.target.value)} autoFocus />
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
+                                {filteredBuku.map(b => (
+                                    <div key={b.id} onClick={() => setSelectedBook(b)} className={`p-4 rounded-xl border cursor-pointer transition-all flex gap-4 items-center ${selectedBook?.id === b.id ? 'bg-teal-50 border-teal-400 shadow-sm' : 'bg-white border-slate-100 hover:border-teal-200 hover:bg-slate-50'}`}>
+                                        <div className="w-12 h-16 bg-slate-200 rounded shrink-0 overflow-hidden border border-slate-200">
+                                            {b.cover ? <img src={b.cover} className="w-full h-full object-cover" alt="Cover"/> : <div className="w-full h-full flex items-center justify-center text-slate-400"><i className="fas fa-book"></i></div>}
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className="font-bold text-slate-800 line-clamp-2 leading-tight">{b.judul}</h4>
+                                            <p className="text-xs font-mono text-slate-500 mt-1">{b.isbn || b.noInduk}</p>
+                                        </div>
+                                        <div className="text-center shrink-0">
+                                            <span className="block text-[10px] text-slate-400 font-bold uppercase mb-0.5">Sisa / Awal</span>
+                                            <span className="bg-slate-100 text-slate-700 font-black px-2 py-1 rounded text-xs">{b.stock} / {b.stockAwal || b.stock}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Kanan: Detail Eksemplar */}
+                        <div className="p-8 bg-slate-50/50 flex flex-col h-[500px]">
+                            {selectedBook ? (
+                                <div className="flex flex-col h-full">
+                                    <h3 className="text-xl font-black text-slate-800 mb-1 leading-tight">{selectedBook.judul}</h3>
+                                    
+                                    {/* INFO TOTAL FISIK KESELURUHAN (DIPERBAIKI MENGGUNAKAN STOK AWAL) */}
+                                    <div className="flex flex-wrap gap-4 text-sm text-slate-600 font-bold mb-6 border-b border-slate-200 pb-4 mt-2">
+                                        <span><i className="fas fa-barcode mr-1.5"></i> {selectedBook.isbn || selectedBook.noInduk}</span>
+                                        <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md"><i className="fas fa-layer-group mr-1.5"></i> Total Fisik: {detailEksemplar.totalFisik}</span>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                        <div className="mb-6">
+                                            <div className="flex justify-between items-center mb-3">
+                                                <h4 className="font-bold text-emerald-600 flex items-center"><i className="fas fa-check-circle mr-2"></i>Tersedia di Rak ({detailEksemplar.tersedia})</h4>
+                                                {detailEksemplar.available.length > 0 && (
+                                                    <button onClick={handlePrintAvailable} className="bg-emerald-50 text-emerald-600 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-500 hover:text-white transition-colors">
+                                                        <i className="fas fa-print mr-1"></i> Cetak Label
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {detailEksemplar.available.length === 0 ? (
+                                                <p className="text-xs font-bold text-slate-400 bg-slate-100 p-3 rounded-xl">Semua buku sedang dipinjam.</p>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {detailEksemplar.available.map(num => (
+                                                        <span key={num} className="bg-emerald-100 border border-emerald-300 text-emerald-800 px-3 py-1.5 rounded-lg text-sm font-black shadow-sm">
+                                                            Eks. {num}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div>
+                                            <h4 className="font-bold text-rose-600 flex items-center mb-3"><i className="fas fa-hand-holding-box mr-2"></i>Sedang Dipinjam ({detailEksemplar.loans.length})</h4>
+                                            {detailEksemplar.loans.length === 0 ? (
+                                                <p className="text-xs font-bold text-slate-400 bg-slate-100 p-3 rounded-xl">Belum ada yang meminjam buku ini.</p>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {detailEksemplar.loans.map(loan => {
+                                                        const parts = (loan.kodeEksemplar || '').split('-');
+                                                        const num = parseInt(parts[parts.length - 1]) || '?';
+                                                        return (
+                                                            <div key={loan.id} className="flex justify-between items-center bg-white border border-rose-100 p-3 rounded-xl shadow-sm">
+                                                                <div>
+                                                                    <span className="bg-rose-100 text-rose-700 font-black px-2 py-0.5 rounded text-xs mr-2">Eks. {num}</span>
+                                                                    <span className="font-bold text-slate-700 text-sm">{loan.namaPeminjam}</span>
+                                                                </div>
+                                                                <span className="text-[10px] font-bold text-slate-400">{loan.tglPinjam}</span>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+                                    <i className="fas fa-hand-pointer text-5xl mb-4 opacity-50"></i>
+                                    <p className="font-bold text-sm">Pilih buku di sebelah kiri untuk melihat detail eksemplar.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
         const DashboardView = ({ anggota, buku, peminjaman, kehadiran, sekolah, onUserClick }) => {
             const [sB, setSB] = useState(null);
             const aL = peminjaman.filter(p => p.status === 'Dipinjam').length;
@@ -2104,288 +2338,276 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
             );
         };
 
- const BukuView = ({ data, onAdd, onUpdate, onDelete, showAlert }) => {
-            const iF = { judul: '', anakJudul: '', pengarang: '', penerbit: '', kotaTerbit: '', tahun: '', deskripsiFisik: '', isbn: '', subjek: '', klasifikasiDDC: '000 - Komputer, Informasi, dan Karya Umum', kodeLabel: '', sinopsis: '', cover: '', noInduk: '', lokasiRak: '', sumberPerolehan: 'BOSP', stock: 1, tglMasuk: new Date().toISOString().split('T')[0] };
-            const [io, setIo] = useState(false), [eId, setEId] = useState(null), [f, setF] = useState(''), [fm, setFm] = useState(iF), [aT, setAT] = useState('metadata');
-            const [rM, setRM] = useState({ is: false, b: null, alasan: '', tgl: new Date().toISOString().split('T')[0] });
+const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert }) => {
+    const iF = { judul: '', anakJudul: '', pengarang: '', penerbit: '', kotaTerbit: '', tahun: '', deskripsiFisik: '', isbn: '', subjek: '', klasifikasiDDC: '000 - Komputer, Informasi, dan Karya Umum', kodeLabel: '', sinopsis: '', cover: '', noInduk: '', lokasiRak: '', sumberPerolehan: 'BOSP', stock: 1, stockAwal: 1, tglMasuk: new Date().toISOString().split('T')[0] };
+    
+    const [io, setIo] = useState(false), [eId, setEId] = useState(null), [f, setF] = useState(''), [fm, setFm] = useState(iF), [aT, setAT] = useState('metadata');
+    const [rM, setRM] = useState({ is: false, b: null, alasan: '', tgl: new Date().toISOString().split('T')[0] });
 
-            const hS = e => { e.preventDefault(); if (eId) onUpdate(eId, fm); else onAdd({ ...fm, status: 'Aktif' }); setIo(false); setEId(null); setFm(iF); setAT('metadata'); showAlert('Berhasil', `Data disimpan.`, 'success'); };
-            const hC = e => { const l = e.target.files[0]; if (l) { if (l.size > 500000) return showAlert("Kebesaran", "Maks 500KB", "warning"); const r = new FileReader(); r.onloadend = () => setFm({ ...fm, cover: r.result }); r.readAsDataURL(l); } };
-            
-            const hE = () => {
-                const ws = XLSX.utils.json_to_sheet(data.filter(b => b.status !== 'Direduksi').map(b => ({
-                    "No Induk": b.noInduk || '', "ISBN": b.isbn || '', "Judul Buku": b.judul || '', "Anak Judul": b.anakJudul || '',
-                    "Pengarang": b.pengarang || '', "Penerbit": b.penerbit || '', "Kota Terbit": b.kotaTerbit || '', "Tahun": b.tahun || '',
-                    "Deskripsi Fisik": b.deskripsiFisik || '', "Subjek": b.subjek || '', "Sumber Pengadaan": b.sumberPerolehan || '',
-                    "Klasifikasi DDC": b.klasifikasiDDC || '', "Kode Label": b.kodeLabel || '', "Tanggal Masuk": b.tglMasuk || '',
-                    "Sinopsis": b.sinopsis || '', "Rak": b.lokasiRak || '', "Stok": b.stock || 0
-                })));
-                const hitungKodeSpinePintar = (pengarangRaw, judulRaw) => {
-                if (!pengarangRaw) return "";
-                // Pisahkan pengarang berdasarkan koma
-                const listPengarang = pengarangRaw.split(',').map(p => p.trim()).filter(p => p.length > 0);
-                const judul = (judulRaw || "").trim();
-                
-                if (listPengarang.length === 0) return "";
-                
-                let tigaHurufDepan = "";
-                let satuHurufKecil = "";
-                
-                if (listPengarang.length <= 3) {
-                    // Kaidah 1-3 Pengarang: 3 Huruf pertama pengarang pertama + 1 Huruf pertama judul (kecil)
-                    tigaHurufDepan = listPengarang[0].substring(0, 3).toUpperCase();
-                    satuHurufKecil = judul ? judul.charAt(0).toLowerCase() : "";
-                } else {
-                    // Kaidah > 3 Pengarang: 3 Huruf pertama judul + 1 Huruf pertama pengarang pertama (kecil)
-                    tigaHurufDepan = judul.substring(0, 3).toUpperCase();
-                    satuHurufKecil = listPengarang[0] ? listPengarang[0].charAt(0).toLowerCase() : "";
-                }
-                
-                return `${tigaHurufDepan} ${satuHurufKecil}`.trim();
-            };
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Buku");
-                XLSX.writeFile(wb, "Data_Buku.xlsx");
-            };
+    // FUNGSI PINTAR DIPERBAIKI (Mencegah Database Membaca Data Lama yang Salah)
+    const getTrueStockAwal = (b) => {
+        // 1. Hitung jumlah buku ini yang sedang dipinjam saat ini
+        const activeLoansCount = peminjaman.filter(p => p.idBuku === b.id && p.status === 'Dipinjam').length;
+        
+        // 2. Hitung total fisik Murni = Sisa di rak + Yang dipinjam
+        const minimumFisik = (parseInt(b.stock) || 0) + activeLoansCount;
+        
+        // 3. Cek data stok awal yang tersimpan di database
+        const savedAwal = parseInt(b.stockAwal);
+        
+        // 4. LOGIKA KUNCI: Jika di database stok awalnya LEBIH KECIL dari total fisik murni 
+        // (contoh: di DB 189, padahal total fisiknya 514), maka PAKSA gunakan total fisik murni!
+        if (!isNaN(savedAwal) && savedAwal >= minimumFisik) {
+            return savedAwal;
+        }
+        
+        return minimumFisik;
+    };
 
-            const hI = e => {
-                const l = e.target.files[0]; if (!l) return;
-                const r = new FileReader();
-                r.onload = ev => {
-                    try {
-                        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' }); const d = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                        let count = 0;
-                        d.forEach(rw => {
-                            if (rw["Judul Buku"]) {
-                                onAdd({
-                                    noInduk: rw["No Induk"]?.toString() || '', isbn: rw["ISBN"]?.toString() || '', judul: rw["Judul Buku"]?.toString() || '',
-                                    anakJudul: rw["Anak Judul"]?.toString() || '', pengarang: rw["Pengarang"]?.toString() || '', penerbit: rw["Penerbit"]?.toString() || '',
-                                    kotaTerbit: rw["Kota Terbit"]?.toString() || '', tahun: rw["Tahun"]?.toString() || '', deskripsiFisik: rw["Deskripsi Fisik"]?.toString() || '',
-                                    subjek: rw["Subjek"]?.toString() || '', sumberPerolehan: rw["Sumber Pengadaan"]?.toString() || 'BOSP',
-                                    klasifikasiDDC: rw["Klasifikasi DDC"]?.toString() || '000 - Komputer, Informasi, dan Karya Umum',
-                                    kodeLabel: rw["Kode Label"]?.toString() || '', tglMasuk: rw["Tanggal Masuk"]?.toString() || new Date().toISOString().split('T')[0],
-                                    sinopsis: rw["Sinopsis"]?.toString() || '', lokasiRak: rw["Rak"]?.toString() || '',
-                                    stock: parseInt(rw["Stok"] || rw["Stock"]) || 1, status: 'Aktif'
-                                });
-                                count++;
-                            }
+    const handleEditClick = (bukuItem) => {
+        const calculatedAwal = getTrueStockAwal(bukuItem);
+        setFm({ ...bukuItem, stockAwal: calculatedAwal });
+        setEId(bukuItem.id);
+        setIo(true);
+        setAT('metadata');
+    };
+
+    const hS = e => { 
+        e.preventDefault(); 
+        if (fm.stock > (fm.stockAwal || fm.stock)) {
+            return showAlert('Peringatan', 'Stok Tersedia tidak boleh melebihi Stok Awal!', 'warning');
+        }
+
+        if (eId) onUpdate(eId, fm); 
+        else onAdd({ ...fm, status: 'Aktif' }); 
+        
+        setIo(false); setEId(null); setFm(iF); setAT('metadata'); 
+        showAlert('Berhasil', `Data disimpan.`, 'success'); 
+    };
+    
+    const hC = e => { const l = e.target.files[0]; if (l) { if (l.size > 500000) return showAlert("Kebesaran", "Maks 500KB", "warning"); const r = new FileReader(); r.onloadend = () => setFm({ ...fm, cover: r.result }); r.readAsDataURL(l); } };
+    
+    const hE = () => {
+        const ws = XLSX.utils.json_to_sheet(data.filter(b => b.status !== 'Direduksi').map(b => ({
+            "No Induk": b.noInduk || '', "ISBN": b.isbn || '', "Judul Buku": b.judul || '', "Anak Judul": b.anakJudul || '',
+            "Pengarang": b.pengarang || '', "Penerbit": b.penerbit || '', "Kota Terbit": b.kotaTerbit || '', "Tahun": b.tahun || '',
+            "Deskripsi Fisik": b.deskripsiFisik || '', "Subjek": b.subjek || '', "Sumber Pengadaan": b.sumberPerolehan || '',
+            "Klasifikasi DDC": b.klasifikasiDDC || '', "Kode Label": b.kodeLabel || '', "Tanggal Masuk": b.tglMasuk || '',
+            "Sinopsis": b.sinopsis || '', "Rak": b.lokasiRak || '', 
+            "Stok Awal": getTrueStockAwal(b), 
+            "Stok Tersedia": b.stock || 0
+        })));
+        const hitungKodeSpinePintar = (pengarangRaw, judulRaw) => {
+            if (!pengarangRaw) return "";
+            const listPengarang = pengarangRaw.split(',').map(p => p.trim()).filter(p => p.length > 0);
+            const judul = (judulRaw || "").trim();
+            if (listPengarang.length === 0) return "";
+            let tigaHurufDepan = "";
+            let satuHurufKecil = "";
+            if (listPengarang.length <= 3) {
+                tigaHurufDepan = listPengarang[0].substring(0, 3).toUpperCase();
+                satuHurufKecil = judul ? judul.charAt(0).toLowerCase() : "";
+            } else {
+                tigaHurufDepan = judul.substring(0, 3).toUpperCase();
+                satuHurufKecil = listPengarang[0] ? listPengarang[0].charAt(0).toLowerCase() : "";
+            }
+            return `${tigaHurufDepan} ${satuHurufKecil}`.trim();
+        };
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Buku");
+        XLSX.writeFile(wb, "Data_Buku.xlsx");
+    };
+
+    const hI = e => {
+        const l = e.target.files[0]; if (!l) return;
+        const r = new FileReader();
+        r.onload = ev => {
+            try {
+                const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' }); const d = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                let count = 0;
+                d.forEach(rw => {
+                    if (rw["Judul Buku"]) {
+                        onAdd({
+                            noInduk: rw["No Induk"]?.toString() || '', isbn: rw["ISBN"]?.toString() || '', judul: rw["Judul Buku"]?.toString() || '',
+                            anakJudul: rw["Anak Judul"]?.toString() || '', pengarang: rw["Pengarang"]?.toString() || '', penerbit: rw["Penerbit"]?.toString() || '',
+                            kotaTerbit: rw["Kota Terbit"]?.toString() || '', tahun: rw["Tahun"]?.toString() || '', deskripsiFisik: rw["Deskripsi Fisik"]?.toString() || '',
+                            subjek: rw["Subjek"]?.toString() || '', sumberPerolehan: rw["Sumber Pengadaan"]?.toString() || 'BOSP',
+                            klasifikasiDDC: rw["Klasifikasi DDC"]?.toString() || '000 - Komputer, Informasi, dan Karya Umum',
+                            kodeLabel: rw["Kode Label"]?.toString() || '', tglMasuk: rw["Tanggal Masuk"]?.toString() || new Date().toISOString().split('T')[0],
+                            sinopsis: rw["Sinopsis"]?.toString() || '', lokasiRak: rw["Rak"]?.toString() || '',
+                            stockAwal: parseInt(rw["Stok Awal"] || rw["Stok"] || rw["Stock"]) || 1, 
+                            stock: parseInt(rw["Stok Tersedia"] || rw["Stok"] || rw["Stock"]) || 1, status: 'Aktif'
                         });
-                        showAlert('Sukses', `Import ${count} buku berhasil.`, 'success');
-                    } catch (e) { showAlert('Gagal', 'Gagal memproses file import.', 'error'); } 
-                    e.target.value = null;
-                }; 
-                r.readAsArrayBuffer(l);
-            };
+                        count++;
+                    }
+                });
+                showAlert('Sukses', `Import ${count} buku berhasil.`, 'success');
+            } catch (e) { showAlert('Gagal', 'Gagal memproses file import.', 'error'); } 
+            e.target.value = null;
+        }; 
+        r.readAsArrayBuffer(l);
+    };
 
-            const fD = data.filter(i => {
-                if (i.status === 'Direduksi') return false;
-                const fl = f.toLowerCase(), bf = fl.replace(/-\d+$/, '');
-                return i.judul.toLowerCase().includes(fl) || (i.isbn && i.isbn.toLowerCase().includes(bf)) || (i.noInduk && i.noInduk.toLowerCase().includes(bf)) || (i.pengarang && i.pengarang.toLowerCase().includes(fl));
-            });
+    const fD = data.filter(i => {
+        if (i.status === 'Direduksi') return false;
+        const fl = f.toLowerCase(), bf = fl.replace(/-\d+$/, '');
+        return i.judul.toLowerCase().includes(fl) || (i.isbn && i.isbn.toLowerCase().includes(bf)) || (i.noInduk && i.noInduk.toLowerCase().includes(bf)) || (i.pengarang && i.pengarang.toLowerCase().includes(fl));
+    });
 
-            return (
-                <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden">
-                    <div className="p-6 md:p-8 border-b flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-                        <div className="flex items-center gap-4 w-full xl:w-auto">
-                            <h2 className="text-2xl font-black shrink-0">Daftar Buku</h2>
-                            <div className="relative w-full md:w-80">
-                                <i className="fas fa-barcode absolute left-5 top-3 text-indigo-400"></i>
-                                <input type="text" placeholder="Scan/Cari..." className="input-field pl-12 py-2.5 text-sm" value={f} onChange={e => setF(e.target.value)} />
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap gap-3">
-                            <button onClick={hE} className="btn-secondary"><i className="fas fa-file-excel mr-2 text-green-500"></i> Export</button>
-                            <label className="btn-secondary cursor-pointer mb-0"><i className="fas fa-file-upload mr-2 text-blue-500"></i> Import<input type="file" accept=".xlsx, .xls" onChange={hI} className="hidden" /></label>
-                            <button onClick={() => { setFm(iF); setEId(null); setIo(true); setAT('metadata'); }} className="btn-primary"><i className="fas fa-plus mr-2"></i> Tambah</button>
-                        </div>
+    return (
+        <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden">
+            <div className="p-6 md:p-8 border-b flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+                <div className="flex items-center gap-4 w-full xl:w-auto">
+                    <h2 className="text-2xl font-black shrink-0">Daftar Buku</h2>
+                    <div className="relative w-full md:w-80">
+                        <i className="fas fa-barcode absolute left-5 top-3 text-indigo-400"></i>
+                        <input type="text" placeholder="Scan/Cari..." className="input-field pl-12 py-2.5 text-sm" value={f} onChange={e => setF(e.target.value)} />
                     </div>
-                    <div className="overflow-x-auto p-4">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-indigo-50/50 text-indigo-600 font-bold uppercase text-[11px] rounded-xl">
-                                <tr>
-                                    <th className="py-4 px-6 rounded-l-2xl">Identitas (No/ISBN)</th>
-                                    <th className="py-4 px-6">Judul Buku</th>
-                                    <th className="py-4 px-6">Klasifikasi & Lokasi</th>
-                                    <th className="py-4 px-6">Stok</th>
-                                    <th className="py-4 px-6 text-right rounded-r-2xl">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {fD.map(i => (
-                                    <tr key={i.id} className="hover:bg-slate-50/80 group">
-                                        <td className="py-4 px-6 font-mono text-xs">{i.noInduk}<br /><b>{i.isbn}</b></td>
-                                        <td className="py-4 px-6">
-                                            <span onClick={() => { setFm(i); setEId(i.id); setIo(true); setAT('metadata'); }} className="font-bold text-slate-800 cursor-pointer hover:text-indigo-600">{i.judul}</span>
-                                            {i.anakJudul && <p className="text-[10px] italic text-slate-500">{i.anakJudul}</p>}
-                                            <span className="text-xs text-slate-400 block mt-1">{i.pengarang}</span>
-                                        </td>
-                                        <td className="py-4 px-6">
-                                            <div className="text-xs font-bold text-indigo-600">{i.klasifikasiDDC}</div>
-                                            <span className="px-2 py-1 bg-slate-100 rounded text-[10px] uppercase">{i.lokasiRak || 'Rak ?'}</span>
-                                        </td>
-                                        <td className="py-4 px-6">
-                                            <span className={`px-3 py-1.5 rounded-lg text-xs font-bold ${i.stock > 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>{i.stock} Eks</span>
-                                        </td>
-                                        <td className="py-4 px-6 flex justify-end gap-2">
-                                            <button onClick={() => { setFm(i); setEId(i.id); setIo(true); setAT('metadata'); }} className="w-9 h-9 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center hover:bg-blue-500 hover:text-white" title="Edit Buku"><i className="fas fa-edit"></i></button>
-                                            <button onClick={() => setRM({ is: true, b: i, alasan: '', tgl: new Date().toISOString().split('T')[0] })} className="w-9 h-9 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center hover:bg-orange-500 hover:text-white" title="Reduksi Buku (Weeding)"><i className="fas fa-box-archive"></i></button>
-                                            <button onClick={() => onDelete(i.id)} className="w-9 h-9 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-500 hover:text-white" title="Hapus Permanen"><i className="fas fa-trash"></i></button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    {io && (
-                        <div className="fixed inset-0 bg-slate-900/40 z-[999] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] flex flex-col relative shadow-2xl animate-[bounceIn_0.3s_ease-out]">
-                                <div className="p-4 md:p-8 border-b flex justify-between items-center">
-                                    <h3 className="text-2xl font-black">{eId ? 'Edit' : 'Tambah'} Buku</h3>
-                                    <button onClick={() => setIo(false)} className="w-10 h-10 bg-slate-100 rounded-full"><i className="fas fa-times"></i></button>
-                                </div>
-                                <div className="px-8 flex gap-4 border-b shrink-0 overflow-x-auto">
-                                    <button type="button" onClick={() => setAT('metadata')} className={`py-4 font-bold border-b-2 ${aT === 'metadata' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Bibliografi</button>
-                                    <button type="button" onClick={() => setAT('inventaris')} className={`py-4 font-bold border-b-2 ${aT === 'inventaris' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400'}`}>Inventaris</button>
-                                </div>
-                                <form id="bookForm" onSubmit={hS} className="p-8 overflow-y-auto flex-1 custom-scrollbar">
-                                    <div className={aT === 'metadata' ? 'block' : 'hidden'}>
-                                        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                                            <div className="md:col-span-4">
-                                                <div className="w-full aspect-[2/3] bg-slate-100 rounded-2xl border-2 border-dashed relative">
-                                                    {fm.cover ? <img src={fm.cover} className="w-full h-full object-cover" alt="Cover" /> : <div className="text-center p-4 text-slate-400 h-full flex flex-col justify-center"><i className="fas fa-image text-4xl"></i></div>}
-                                                    <input type="file" accept="image/*" onChange={hC} className="absolute inset-0 opacity-0 cursor-pointer" />
-                                                </div>
-                                            </div>
-                                            <div className="md:col-span-8 space-y-5">
-                                                <Input 
-                                                        label="Judul Lengkap" 
-                                                        value={fm.judul} 
-                                                        onChange={e => setFm({ ...fm, judul: e.target.value })} 
-                                                        onBlur={e => setFm({ ...fm, kodeLabel: hitungKodeSpinePintar(fm.pengarang, e.target.value) })}
-                                                        required={true} 
-                                                    />
-                                                <Input label="Anak Judul (Opsional)" value={fm.anakJudul || ''} onChange={e => setFm({ ...fm, anakJudul: e.target.value })} />
-                                                <div className="grid grid-cols-2 gap-5">
-                                                
-                                                    <Input 
-                                                    label="Pengarang" 
-                                                    value={fm.pengarang} 
-                                                    placeholder="Pisahkan dengan koma jika > 1 (Misal: Feri, Budi)"
-                                                    onChange={e => setFm({ ...fm, pengarang: e.target.value })} 
-                                                    onBlur={e => setFm({ ...fm, kodeLabel: hitungKodeSpinePintar(e.target.value, fm.judul) })}
-                                                    required={true} 
-                                                />
-                                                    <Input label="ISBN" value={fm.isbn} onChange={e => setFm({ ...fm, isbn: e.target.value })} /></div>
-                                                
-                                                    <div className="grid grid-cols-3 gap-5"><Input label="Penerbit" value={fm.penerbit} onChange={e => setFm({ ...fm, penerbit: e.target.value })} /><Input label="Kota" value={fm.kotaTerbit} onChange={e => setFm({ ...fm, kotaTerbit: e.target.value })} /><Input label="Tahun" type="number" value={fm.tahun} onChange={e => setFm({ ...fm, tahun: e.target.value })} /></div>
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                                                    <Input label="Fisik" value={fm.deskripsiFisik} onChange={e => setFm({ ...fm, deskripsiFisik: e.target.value })} />
-                                                    <Input label="Subjek" value={fm.subjek} onChange={e => setFm({ ...fm, subjek: e.target.value })} />
-                                                    <div>
-                                                        <label className="block text-sm font-bold text-slate-600 mb-1.5 ml-1">Sumber Pengadaan</label>
-                                                        <select className="input-field" value={fm.sumberPerolehan} onChange={e => setFm({ ...fm, sumberPerolehan: e.target.value })}>
-                                                            <option value="BOSP">BOSP</option><option value="BPOPP">BPOPP</option><option value="Hibah">Hibah</option><option value="Lainnya">Lainnya</option>
-                                                        </select>
-                                                    </div>
-                                                </div>
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                                                    <div>
-                                                        <label className="block text-sm font-bold text-slate-600 mb-1.5 ml-1">Klasifikasi DDC</label>
-                                                        <select className="input-field" value={fm.klasifikasiDDC} onChange={e => setFm({ ...fm, klasifikasiDDC: e.target.value })}>
-                                                            <option value="000 - Komputer, Informasi, dan Karya Umum">000 - Umum</option><option value="100 - Filsafat dan Psikologi">100 - Filsafat & Psikologi</option><option value="200 - Agama">200 - Agama</option><option value="300 - Ilmu Sosial">300 - Sosial</option><option value="400 - Bahasa">400 - Bahasa</option><option value="500 - Sains dan Matematika">500 - Sains</option><option value="600 - Teknologi">600 - Teknologi</option><option value="700 - Kesenian, Hiburan, dan Olahraga">700 - Seni & Olahraga</option><option value="800 - Sastra dan Retorika">800 - Sastra</option><option value="900 - Sejarah, Biografi, dan Geografi">900 - Sejarah & Geografi</option>
-                                                        </select>
-                                                    </div>
-                                                    <Input label="Kode Label (Opsional)" value={fm.kodeLabel || ''} onChange={e => setFm({ ...fm, kodeLabel: e.target.value })} />
-                                                    <Input label="Tanggal Masuk" type="date" value={fm.tglMasuk || new Date().toISOString().split('T')[0]} onChange={e => setFm({ ...fm, tglMasuk: e.target.value })} required={true} />
-                                                </div>
-                                                <div><label className="block text-sm font-bold text-slate-600 mb-1.5 ml-1">Sinopsis</label><textarea className="input-field min-h-[100px]" value={fm.sinopsis} onChange={e => setFm({ ...fm, sinopsis: e.target.value })}></textarea></div>
-                                            </div>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                    <button onClick={hE} className="btn-secondary"><i className="fas fa-file-excel mr-2 text-green-500"></i> Export</button>
+                    <label className="btn-secondary cursor-pointer mb-0"><i className="fas fa-file-upload mr-2 text-blue-500"></i> Import<input type="file" accept=".xlsx, .xls" onChange={hI} className="hidden" /></label>
+                    <button onClick={() => { setFm(iF); setEId(null); setIo(true); setAT('metadata'); }} className="btn-primary"><i className="fas fa-plus mr-2"></i> Tambah</button>
+                </div>
+            </div>
+            <div className="overflow-x-auto p-4">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-indigo-50/50 text-indigo-600 font-bold uppercase text-[11px] rounded-xl">
+                        <tr>
+                            <th className="py-4 px-6 rounded-l-2xl">Identitas (No/ISBN)</th>
+                            <th className="py-4 px-6">Judul Buku</th>
+                            <th className="py-4 px-6">Klasifikasi & Lokasi</th>
+                            <th className="py-4 px-6">Informasi Stok</th>
+                            <th className="py-4 px-6 text-right rounded-r-2xl">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                        {fD.map(i => (
+                            <tr key={i.id} className="hover:bg-slate-50/80 group">
+                                <td className="py-4 px-6 font-mono text-xs">{i.noInduk}<br /><b>{i.isbn}</b></td>
+                                <td className="py-4 px-6">
+                                    <span onClick={() => handleEditClick(i)} className="font-bold text-slate-800 cursor-pointer hover:text-indigo-600">{i.judul}</span>
+                                    {i.anakJudul && <p className="text-[10px] italic text-slate-500">{i.anakJudul}</p>}
+                                    <span className="text-xs text-slate-400 block mt-1">{i.pengarang}</span>
+                                </td>
+                                <td className="py-4 px-6">
+                                    <div className="text-xs font-bold text-indigo-600">{i.klasifikasiDDC}</div>
+                                    <span className="px-2 py-1 bg-slate-100 rounded text-[10px] uppercase mt-1 inline-block">{i.lokasiRak || 'Rak ?'}</span>
+                                </td>
+                                <td className="py-4 px-6">
+                                    <div className="flex flex-col gap-1.5 w-max">
+                                        <span className={`px-3 py-1 text-xs font-black rounded border ${i.stock > 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-rose-50 text-rose-600 border-rose-200'}`}>Sisa: {i.stock}</span>
+                                        <span className="text-[10px] text-slate-500 font-bold px-1 uppercase tracking-widest">Awal: {getTrueStockAwal(i)}</span>
+                                    </div>
+                                </td>
+                                <td className="py-4 px-6 flex justify-end gap-2">
+                                    <button onClick={() => handleEditClick(i)} className="w-9 h-9 bg-blue-50 text-blue-500 rounded-xl flex items-center justify-center hover:bg-blue-500 hover:text-white" title="Edit Buku"><i className="fas fa-edit"></i></button>
+                                    <button onClick={() => setRM({ is: true, b: i, alasan: '', tgl: new Date().toISOString().split('T')[0] })} className="w-9 h-9 bg-orange-50 text-orange-500 rounded-xl flex items-center justify-center hover:bg-orange-500 hover:text-white" title="Reduksi Buku (Weeding)"><i className="fas fa-box-archive"></i></button>
+                                    <button onClick={() => onDelete(i.id)} className="w-9 h-9 bg-red-50 text-red-500 rounded-xl flex items-center justify-center hover:bg-red-500 hover:text-white" title="Hapus Permanen"><i className="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            {io && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] flex flex-col relative shadow-2xl animate-[bounceIn_0.3s_ease-out]">
+                        <div className="p-4 md:p-8 border-b flex justify-between items-center bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-50 via-white to-white rounded-t-[2rem]">
+                            <h3 className="text-2xl font-black text-indigo-950">{eId ? 'Edit' : 'Tambah'} Buku</h3>
+                            <button onClick={() => setIo(false)} className="w-10 h-10 bg-slate-100 hover:bg-rose-100 hover:text-rose-600 rounded-full transition-colors"><i className="fas fa-times"></i></button>
+                        </div>
+                        <div className="px-8 flex gap-4 border-b shrink-0 overflow-x-auto">
+                            <button type="button" onClick={() => setAT('metadata')} className={`py-4 font-bold border-b-2 transition-colors ${aT === 'metadata' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-indigo-400'}`}>Bibliografi</button>
+                            <button type="button" onClick={() => setAT('inventaris')} className={`py-4 font-bold border-b-2 transition-colors ${aT === 'inventaris' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-indigo-400'}`}>Inventaris</button>
+                        </div>
+                        <form id="bookForm" onSubmit={hS} className="p-8 overflow-y-auto flex-1 custom-scrollbar">
+                            <div className={aT === 'metadata' ? 'block' : 'hidden'}>
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                                    <div className="md:col-span-4">
+                                        <div className="w-full aspect-[2/3] bg-slate-100 rounded-2xl border-2 border-dashed relative group overflow-hidden">
+                                            {fm.cover ? <img src={fm.cover} className="w-full h-full object-cover transition-transform group-hover:scale-105" alt="Cover" /> : <div className="text-center p-4 text-slate-400 h-full flex flex-col justify-center"><i className="fas fa-image text-4xl mb-2"></i><span className="text-xs font-bold">Upload Cover</span></div>}
+                                            <input type="file" accept="image/*" onChange={hC} className="absolute inset-0 opacity-0 cursor-pointer" />
                                         </div>
                                     </div>
-                                    <div className={aT === 'inventaris' ? 'block space-y-6' : 'hidden'}>
-                                        <div className="grid grid-cols-2 gap-6"><Input label="Kode Barcode / No Induk" value={fm.noInduk} onChange={e => setFm({ ...fm, noInduk: e.target.value })} required={true} /><Input label="Stok" type="number" value={fm.stock} onChange={e => setFm({ ...fm, stock: parseInt(e.target.value) || 0 })} required={true} /></div>
-                                        <div className="grid grid-cols-2 gap-6"><Input label="Rak" value={fm.lokasiRak} onChange={e => setFm({ ...fm, lokasiRak: e.target.value })} /></div>
+                                    <div className="md:col-span-8 space-y-5">
+                                        <Input label="Judul Lengkap" value={fm.judul} onChange={e => setFm({ ...fm, judul: e.target.value })} onBlur={e => setFm({ ...fm, kodeLabel: hitungKodeSpinePintar(fm.pengarang, e.target.value) })} required={true} />
+                                        <Input label="Anak Judul (Opsional)" value={fm.anakJudul || ''} onChange={e => setFm({ ...fm, anakJudul: e.target.value })} />
+                                        <div className="grid grid-cols-2 gap-5">
+                                            <Input label="Pengarang" value={fm.pengarang} placeholder="Pisahkan dgn koma jika > 1" onChange={e => setFm({ ...fm, pengarang: e.target.value })} onBlur={e => setFm({ ...fm, kodeLabel: hitungKodeSpinePintar(e.target.value, fm.judul) })} required={true} />
+                                            <Input label="ISBN" value={fm.isbn} onChange={e => setFm({ ...fm, isbn: e.target.value })} />
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-5">
+                                            <Input label="Penerbit" value={fm.penerbit} onChange={e => setFm({ ...fm, penerbit: e.target.value })} />
+                                            <Input label="Kota" value={fm.kotaTerbit} onChange={e => setFm({ ...fm, kotaTerbit: e.target.value })} />
+                                            <Input label="Tahun" type="number" value={fm.tahun} onChange={e => setFm({ ...fm, tahun: e.target.value })} />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                            <Input label="Fisik" value={fm.deskripsiFisik} onChange={e => setFm({ ...fm, deskripsiFisik: e.target.value })} />
+                                            <Input label="Subjek" value={fm.subjek} onChange={e => setFm({ ...fm, subjek: e.target.value })} />
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-600 mb-1.5 ml-1">Sumber Pengadaan</label>
+                                                <select className="input-field" value={fm.sumberPerolehan} onChange={e => setFm({ ...fm, sumberPerolehan: e.target.value })}>
+                                                    <option value="BOSP">BOSP</option><option value="BPOPP">BPOPP</option><option value="Hibah">Hibah</option><option value="Lainnya">Lainnya</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-600 mb-1.5 ml-1">Klasifikasi DDC</label>
+                                                <select className="input-field" value={fm.klasifikasiDDC} onChange={e => setFm({ ...fm, klasifikasiDDC: e.target.value })}>
+                                                    <option value="000 - Komputer, Informasi, dan Karya Umum">000 - Umum</option><option value="100 - Filsafat dan Psikologi">100 - Filsafat & Psikologi</option><option value="200 - Agama">200 - Agama</option><option value="300 - Ilmu Sosial">300 - Sosial</option><option value="400 - Bahasa">400 - Bahasa</option><option value="500 - Sains dan Matematika">500 - Sains</option><option value="600 - Teknologi">600 - Teknologi</option><option value="700 - Kesenian, Hiburan, dan Olahraga">700 - Seni & Olahraga</option><option value="800 - Sastra dan Retorika">800 - Sastra</option><option value="900 - Sejarah, Biografi, dan Geografi">900 - Sejarah & Geografi</option>
+                                                </select>
+                                            </div>
+                                            <Input label="Kode Label (Opsional)" value={fm.kodeLabel || ''} onChange={e => setFm({ ...fm, kodeLabel: e.target.value })} />
+                                            <Input label="Tanggal Masuk" type="date" value={fm.tglMasuk || new Date().toISOString().split('T')[0]} onChange={e => setFm({ ...fm, tglMasuk: e.target.value })} required={true} />
+                                        </div>
+                                        <div><label className="block text-sm font-bold text-slate-600 mb-1.5 ml-1">Sinopsis</label><textarea className="input-field min-h-[100px]" value={fm.sinopsis} onChange={e => setFm({ ...fm, sinopsis: e.target.value })}></textarea></div>
                                     </div>
-                                </form>
-                                <div className="p-6 border-t flex justify-end gap-3"><button type="button" onClick={() => setIo(false)} className="btn-secondary">Batal</button><button onClick={() => document.getElementById('bookForm').requestSubmit()} className="btn-primary">Simpan Buku</button></div>
-                            </div>
-                        </div>
-                    )}
-                    {rM.is && (
-                        <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-[bounceIn_0.3s_ease-out]">
-                                <h3 className="text-xl font-black mb-1">Reduksi Buku</h3><p className="text-xs text-slate-500 mb-6 font-bold truncate">{rM.b.judul}</p>
-                                <Input label="Tanggal Reduksi" type="date" value={rM.tgl} onChange={e => setRM({ ...rM, tgl: e.target.value })} />
-                                <div className="mt-4"><label className="block text-sm font-bold mb-1.5">Alasan Reduksi</label><select className="input-field" value={rM.alasan} onChange={e => setRM({ ...rM, alasan: e.target.value })}><option value="">Pilih Alasan...</option><option value="Rusak Berat">Rusak Berat</option><option value="Hilang (Lama)">Hilang (Lama)</option><option value="Informasi Usang">Informasi Usang</option><option value="Kebijakan Weeding">Kebijakan Weeding</option></select></div>
-                                <div className="flex justify-end gap-3 mt-8">
-                                    <button onClick={() => setRM({ is: false, b: null, alasan: '', tgl: '' })} className="px-5 py-2.5 rounded-xl font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">Batal</button>
-                                    <button onClick={() => { if (!rM.alasan) return showAlert('Gagal', 'Pilih alasan reduksi!', 'warning'); onUpdate(rM.b.id, { status: 'Direduksi', tglReduksi: rM.tgl, alasanReduksi: rM.alasan }); setRM({ is: false, b: null, alasan: '', tgl: '' }); showAlert('Berhasil', 'Buku direduksi dan dihapus dari katalog utama.', 'success'); }} className="px-5 py-2.5 rounded-xl font-bold bg-orange-500 text-white shadow-lg hover:bg-orange-600">Proses</button>
                                 </div>
                             </div>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-
-        const ReduksiView = ({ data, onUpdate, onDelete, onPrint, filter, setFilter }) => {
-            const [p, setP] = useState(1); const l = 10;
-            const rD = useMemo(() => data.filter(b => {
-                if (b.status !== 'Direduksi') return false;
-                if (!b.tglReduksi) return true;
-                let m = true;
-                if (filter.start) m = m && b.tglReduksi >= filter.start;
-                if (filter.end) m = m && b.tglReduksi <= filter.end;
-                return m;
-            }).sort((a, b) => (b.tglReduksi || '').localeCompare(a.tglReduksi || '')), [data, filter]);
-            
-            const tP = Math.ceil(rD.length / l) || 1; const pg = rD.slice((p - 1) * l, p * l);
-            
-            return (
-                <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden flex flex-col h-[80vh]">
-                    <div className="p-6 md:p-8 border-b flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 shrink-0">
-                        <div><h2 className="text-2xl font-black text-slate-800">Buku Direduksi (Weeding)</h2><p className="text-sm font-bold text-slate-500">Standar Penghapusan Koleksi Perpusnas</p></div>
-                        <div className="flex flex-wrap items-center gap-3">
-                            <Input type="date" value={filter.start} onChange={e => { setFilter({ ...filter, start: e.target.value }); setP(1); }} className="w-auto" />
-                            <span className="font-bold text-slate-400">-</span>
-                            <Input type="date" value={filter.end} onChange={e => { setFilter({ ...filter, end: e.target.value }); setP(1); }} className="w-auto" />
-                            <button onClick={() => onPrint('reduksi')} className="btn-primary ml-2"><i className="fas fa-print mr-2"></i> Cetak Laporan</button>
+                            
+                            <div className={aT === 'inventaris' ? 'block space-y-6' : 'hidden'}>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <Input label="Kode Barcode / No Induk" value={fm.noInduk} onChange={e => setFm({ ...fm, noInduk: e.target.value })} required={true} />
+                                    <Input label="Rak / Lokasi Penyimpanan" value={fm.lokasiRak} onChange={e => setFm({ ...fm, lokasiRak: e.target.value })} />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <div className="relative">
+                                        <Input label="Stok Awal (Keseluruhan)" type="number" value={fm.stockAwal === undefined ? fm.stock : fm.stockAwal} onChange={e => setFm({ ...fm, stockAwal: parseInt(e.target.value) || 0 })} required={true} />
+                                        <p className="text-[10px] font-bold text-slate-400 mt-2 ml-1">Total fisik buku saat pertama kali diterima.</p>
+                                    </div>
+                                    <div className="relative">
+                                        <Input label="Stok Tersedia (Saat Ini)" type="number" value={fm.stock} onChange={e => setFm({ ...fm, stock: parseInt(e.target.value) || 0 })} required={true} />
+                                        <p className="text-[10px] font-bold text-slate-400 mt-2 ml-1">Sisa fisik buku yang ada di rak perpustakaan.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                        <div className="p-6 border-t flex justify-end gap-3 bg-slate-50/50 rounded-b-[2rem]">
+                            <button type="button" onClick={() => setIo(false)} className="btn-secondary">Batal</button>
+                            {/* Tombol Simpan Buku akan memicu validasi dan menyimpan nilai 514 */}
+                            <button onClick={() => document.getElementById('bookForm').requestSubmit()} className="btn-primary">Simpan Buku</button>
                         </div>
                     </div>
-                    <div className="flex-1 overflow-x-auto p-4">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-rose-50/50 text-rose-600 font-bold uppercase text-[11px] rounded-xl">
-                                <tr>
-                                    <th className="py-4 px-6 rounded-l-2xl w-32">Tgl Reduksi</th>
-                                    <th className="py-4 px-6">Identitas Buku</th>
-                                    <th className="py-4 px-6">Alasan</th>
-                                    <th className="py-4 px-6 text-right rounded-r-2xl">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {pg.length === 0 ? <tr><td colSpan="4" className="text-center py-10 font-bold text-slate-400">Tidak ada data reduksi buku.</td></tr> : pg.map(i => (
-                                    <tr key={i.id} className="hover:bg-slate-50/50 group">
-                                        <td className="py-4 px-6 font-bold">{i.tglReduksi ? formatDate(i.tglReduksi) : '-'}</td>
-                                        <td className="py-4 px-6"><p className="font-black text-slate-800">{i.judul}</p>{i.anakJudul && <p className="text-[10px] italic text-slate-500">{i.anakJudul}</p>}<p className="text-xs text-slate-500 font-mono mt-1">{i.noInduk} | {i.isbn}</p></td>
-                                        <td className="py-4 px-6"><span className="bg-rose-100 text-rose-700 px-3 py-1.5 rounded-lg text-xs font-black">{i.alasanReduksi}</span></td>
-                                        <td className="py-4 px-6 flex justify-end gap-2 opacity-100 md:opacity-0 group-hover:opacity-100">
-                                            <button onClick={() => onUpdate(i.id, { status: 'Aktif', alasanReduksi: null, tglReduksi: null })} className="w-9 h-9 bg-emerald-50 text-emerald-500 rounded-xl hover:bg-emerald-500 hover:text-white" title="Kembalikan ke Katalog Aktif"><i className="fas fa-rotate-left"></i></button>
-                                            <button onClick={() => onDelete(i.id)} className="w-9 h-9 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-500 hover:text-white" title="Hapus Permanen dari Database"><i className="fas fa-trash"></i></button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    <div className="p-4 border-t flex justify-center items-center gap-4 shrink-0">
-                        <button disabled={p === 1} onClick={() => setP(p - 1)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600 disabled:opacity-50 hover:bg-indigo-100 hover:text-indigo-600 transition-colors"><i className="fas fa-chevron-left"></i></button>
-                        <span className="font-black text-sm text-slate-700">Halaman {p} dari {tP}</span>
-                        <button disabled={p === tP} onClick={() => setP(p + 1)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600 disabled:opacity-50 hover:bg-indigo-100 hover:text-indigo-600 transition-colors"><i className="fas fa-chevron-right"></i></button>
+                </div>
+            )}
+            {rM.is && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl w-full max-w-sm p-8 shadow-2xl animate-[bounceIn_0.3s_ease-out]">
+                        <h3 className="text-xl font-black mb-1">Reduksi Buku</h3><p className="text-xs text-slate-500 mb-6 font-bold truncate">{rM.b.judul}</p>
+                        <Input label="Tanggal Reduksi" type="date" value={rM.tgl} onChange={e => setRM({ ...rM, tgl: e.target.value })} />
+                        <div className="mt-4"><label className="block text-sm font-bold mb-1.5">Alasan Reduksi</label><select className="input-field" value={rM.alasan} onChange={e => setRM({ ...rM, alasan: e.target.value })}><option value="">Pilih Alasan...</option><option value="Rusak Berat">Rusak Berat</option><option value="Hilang (Lama)">Hilang (Lama)</option><option value="Informasi Usang">Informasi Usang</option><option value="Kebijakan Weeding">Kebijakan Weeding</option></select></div>
+                        <div className="flex justify-end gap-3 mt-8">
+                            <button onClick={() => setRM({ is: false, b: null, alasan: '', tgl: '' })} className="px-5 py-2.5 rounded-xl font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">Batal</button>
+                            <button onClick={() => { if (!rM.alasan) return showAlert('Gagal', 'Pilih alasan reduksi!', 'warning'); onUpdate(rM.b.id, { status: 'Direduksi', tglReduksi: rM.tgl, alasanReduksi: rM.alasan }); setRM({ is: false, b: null, alasan: '', tgl: '' }); showAlert('Berhasil', 'Buku direduksi dan dihapus dari katalog utama.', 'success'); }} className="px-5 py-2.5 rounded-xl font-bold bg-orange-500 text-white shadow-lg hover:bg-orange-600">Proses</button>
+                        </div>
                     </div>
                 </div>
-            );
-        };
+            )}
+        </div>
+    );
+};
 
         const PencarianBukuView = ({ data }) => {
             const [s, setS] = useState(''), [sB, setSB] = useState(null);
@@ -2451,34 +2673,16 @@ const getShortBarcode = (text) => {
 const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDelete, onUpdateBuku, showAlert, showConfirm, sekolah }) => {
     const [f, setF] = useState({ idA: '', kodeEksemplar: '', tgl: new Date().toISOString().split('T')[0], lama: 7, isPaket: false });
     const [sQ, setSQ] = useState(''), [sD, setSD] = useState(false), [sA, setSA] = useState(null), [sL, setSL] = useState(null), [iE, setIE] = useState(false), [eF, setEF] = useState({ tglPinjam: '', tglHarusKembali: '' });
-
-    // STATE BARU: Untuk kontrol tampilan Splash Screen Berhasil
-    const [showSplash, setShowSplash] = useState(false);
     
-    // FITUR KUNCI PEMINJAM 1: Tambahkan state
-    const [isPeminjamLocked, setIsPeminjamLocked] = useState(false);
+    // STATE BARU UNTUK PENCARIAN DAFTAR BERJALAN
+    const [searchBerjalan, setSearchBerjalan] = useState('');
 
-    const anggotaRef = useRef(null);
-
-    useEffect(() => {
-        if (!sA) {
-            setTimeout(() => {
-                if (anggotaRef.current) anggotaRef.current.focus();
-            }, 100);
-        }
-    }, [sA]);
-
-    const handleAnggotaKeyDown = (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
-        }
-    };
-
+    // TRIK ANTI-BLANK: Pastikan data selalu berupa Array
     const dAnggota = anggota || [];
     const dBuku = buku || [];
     const dTransaksi = data || [];
 
+    // Pencarian super aman: Mengabaikan huruf besar/kecil DAN spasi
     const hSC = e => { 
         const vRaw = e.target.value; setSQ(vRaw); setSD(true); 
         const vClean = String(vRaw).replace(/[\s\*]+/g, '').toUpperCase();
@@ -2488,6 +2692,7 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             const oId = String(a?.id || '').replace(/\s+/g, '').toUpperCase();
             const oNisn = String(a?.nisn || '').replace(/\s+/g, '').toUpperCase();
             
+            // Cek apakah scan cocok dengan ID asli ATAU cocok dengan Kode Unik Pendek
             return oId === vClean || oNisn === vClean || 
                    getShortBarcode(oId) === vClean || getShortBarcode(oNisn) === vClean;
         }); 
@@ -2502,6 +2707,7 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         const cbFocus = () => setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
         if (!sA) return showAlert("Gagal", "Pilih peminjam!", "warning", cbFocus);
         
+        // Trik Anti-Ngebut Scanner: Ambil nilai langsung dari kotak input HTML secara paksa
         const inputEl = document.getElementById('barcodeInput');
         const actualScan = inputEl ? inputEl.value : f.kodeEksemplar;
         const rawScan = String(actualScan).trim().toUpperCase();
@@ -2515,6 +2721,7 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         if (hT) return showAlert("Ditolak", "Ada tanggungan tahun lalu!", "error", cbFocus);
         if (hL) return showAlert("Ditolak", "Ada tanggungan terlambat!", "error", cbFocus);
 
+        // Proses Pencarian Buku
         const scanS = rawScan.replace(/[\s\*]+/g, '');
         const lastDash = rawScan.lastIndexOf('-'); 
         const baseCode = lastDash > 0 ? rawScan.substring(0, lastDash).replace(/[\s\*]+/g, '') : scanS;
@@ -2525,10 +2732,12 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             const isb = String(x?.isbn || '').replace(/\s+/g, '').toUpperCase();
             const xid = String(x?.id || '').replace(/\s+/g, '').toUpperCase();
 
+            // Cek Kode Asli
             if (ni && (ni === scanS || ni === baseCode)) return true;
             if (isb && (isb === scanS || isb === baseCode)) return true;
             if (xid && (xid === scanS || xid === baseCode)) return true;
             
+            // Cek Kode Pendek Unik (Hash)
             if (ni && (getShortBarcode(ni) === scanS || getShortBarcode(ni) === baseCode)) return true;
             if (isb && (getShortBarcode(isb) === scanS || getShortBarcode(isb) === baseCode)) return true;
             if (xid && (getShortBarcode(xid) === scanS || getShortBarcode(xid) === baseCode)) return true;
@@ -2536,6 +2745,7 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             return false;
         });
         
+        // Pesan error diperbarui agar memunculkan kode yang ditangkap scanner
         if (!b) {
             setF({ ...f, kodeEksemplar: '' }); 
             if (inputEl) inputEl.value = '';
@@ -2571,23 +2781,9 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             }
         } catch (e) { console.error("Gagal update stok:", e); }
         
-        setShowSplash(true);
-        if (inputEl) inputEl.value = '';
-        
-        // FITUR KUNCI PEMINJAM 2: Logika pembersihan form berdasarkan status lock
-        setTimeout(() => {
-            setShowSplash(false);
-            if (isPeminjamLocked) {
-                // Jika dikunci, hanya bersihkan input barcode buku agar bisa scan buku ke-2, ke-3 dst
-                setF(prev => ({ ...prev, kodeEksemplar: '' }));
-                setTimeout(() => { document.getElementById('barcodeInput')?.focus(); }, 100);
-            } else {
-                // Jika tidak dikunci, bersihkan identitas peminjam juga
-                setSA(null);
-                setF(prev => ({ ...prev, idA: '', kodeEksemplar: '' }));
-                setTimeout(() => { if (anggotaRef.current) anggotaRef.current.focus(); }, 100);
-            }
-        }, 1000);
+        setF({ ...f, kodeEksemplar: '' });
+        if (inputEl) inputEl.value = ''; // Kosongkan manual untuk tembakan berikutnya
+        showAlert('Berhasil', "Sirkulasi dicatat!", 'success', cbFocus);
     };
 
     const oM = l => { setSL(l); setEF({ tglPinjam: l.tglPinjam, tglHarusKembali: l.tglHarusKembali }); setIE(false); };
@@ -2602,36 +2798,19 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     <div className="relative z-20">
                         <label className="block text-sm font-bold mb-1.5">Identitas Peminjam</label>
                         {sA ? (
-                            // FITUR KUNCI PEMINJAM 3: Wrapper dan UI Checkbox
-                            <div className="space-y-2">
-                                <div className="flex justify-between bg-indigo-50 border border-indigo-200 p-3.5 rounded-2xl">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-white overflow-hidden flex-shrink-0 flex items-center justify-center border border-indigo-100">
-                                            {sA.foto ? <img src={sA.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-indigo-300"></i>}
-                                        </div>
-                                        <div><p className="font-bold text-indigo-900">{sA.nama}</p><p className="text-[10px] font-bold text-indigo-500 uppercase">{sA.kategori === 'Siswa' ? formatKelasSiswa(sA, sekolah?.daftarJurusan) : sA.kategori}</p></div>
+                            <div className="flex justify-between bg-indigo-50 border border-indigo-200 p-3.5 rounded-2xl">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-white overflow-hidden flex-shrink-0 flex items-center justify-center border border-indigo-100">
+                                        {sA.foto ? <img src={sA.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-indigo-300"></i>}
                                     </div>
-                                    <button type="button" onClick={() => { setSA(null); setF({ ...f, idA: '' }); setIsPeminjamLocked(false); }} className="w-8 h-8 bg-white text-rose-500 rounded-full my-auto shadow-sm"><i className="fas fa-times"></i></button>
+                                    <div><p className="font-bold text-indigo-900">{sA.nama}</p><p className="text-[10px] font-bold text-indigo-500 uppercase">{sA.kategori === 'Siswa' ? formatKelasSiswa(sA, sekolah?.daftarJurusan) : sA.kategori}</p></div>
                                 </div>
-                                <label className="flex items-center gap-2 cursor-pointer px-2 w-fit">
-                                    <input type="checkbox" checked={isPeminjamLocked} onChange={e => setIsPeminjamLocked(e.target.checked)} className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
-                                    <span className="text-xs font-bold text-slate-600">Kunci Identitas (Pinjam banyak buku)</span>
-                                </label>
+                                <button type="button" onClick={() => { setSA(null); setF({ ...f, idA: '' }); }} className="w-8 h-8 bg-white text-rose-500 rounded-full my-auto shadow-sm"><i className="fas fa-times"></i></button>
                             </div>
                         ) : (
                             <div className="relative">
                                 <i className="fas fa-search absolute left-4 top-3.5 text-indigo-400"></i>
-                                <input 
-                                    type="text" 
-                                    ref={anggotaRef}
-                                    onKeyDown={handleAnggotaKeyDown}
-                                    placeholder="Ketik/Scan..." 
-                                    className="w-full bg-slate-50 border border-slate-200 pl-11 pr-4 py-3 rounded-xl font-bold focus:ring-2 focus:ring-indigo-200 focus:outline-none" 
-                                    value={sQ} 
-                                    onChange={hSC} 
-                                    onFocus={() => setSD(true)} 
-                                    onBlur={() => setTimeout(() => setSD(false), 200)} 
-                                />
+                                <input type="text" placeholder="Ketik/Scan..." className="input-field pl-11" value={sQ} onChange={hSC} onFocus={() => setSD(true)} onBlur={() => setTimeout(() => setSD(false), 200)} />
                                 {sD && sQ.length > 1 && (
                                     <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl max-h-60 overflow-y-auto z-50 border border-slate-100">
                                         {fA.map(a => (
@@ -2649,17 +2828,11 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     </div>
                     <div>
                         <label className="block text-sm font-bold mb-1.5">Scan Barcode Buku</label>
-                        <input id="barcodeInput" type="text" className="w-full bg-indigo-50 border border-indigo-300 px-4 py-3 rounded-xl font-mono font-bold focus:ring-2 focus:ring-indigo-200 focus:outline-none" value={f.kodeEksemplar} onChange={e => setF({ ...f, kodeEksemplar: e.target.value })} required />
+                        <input id="barcodeInput" type="text" className="input-field border-indigo-300 bg-indigo-50 font-mono font-bold" value={f.kodeEksemplar} onChange={e => setF({ ...f, kodeEksemplar: e.target.value })} required autoFocus />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-bold mb-1.5">Tgl Pinjam</label>
-                            <input type="date" className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl font-bold focus:outline-none" value={f.tgl} onChange={e => setF({ ...f, tgl: e.target.value })} required />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold mb-1.5">Batas (Hari)</label>
-                            <input type="number" className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl font-bold focus:outline-none disabled:opacity-50" value={f.isPaket ? 365 : f.lama} onChange={e => setF({ ...f, lama: e.target.value })} required={!f.isPaket} disabled={f.isPaket} />
-                        </div>
+                        <Input label="Tgl Pinjam" type="date" value={f.tgl} onChange={e => setF({ ...f, tgl: e.target.value })} required={true} />
+                        <Input label="Batas (Hari)" type="number" value={f.isPaket ? 365 : f.lama} onChange={e => setF({ ...f, lama: e.target.value })} required={!f.isPaket} disabled={f.isPaket} />
                     </div>
                     <label className="flex items-center gap-3 p-3 mt-2 mb-4 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
                         <input type="checkbox" checked={f.isPaket} onChange={e => setF({ ...f, isPaket: e.target.checked })} className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
@@ -2668,24 +2841,48 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                             <span className="text-[10px] font-medium text-slate-500">Masa pinjam otomatis 1 Tahun Ajaran</span>
                         </div>
                     </label>
-                    <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-4 rounded-xl shadow-lg transition-colors text-lg">Setujui</button>
+                    <button type="submit" className="btn-primary w-full py-4 text-lg">Setujui</button>
                 </form>
             </div>
             
+            {/* AREA DAFTAR PINJAMAN BERJALAN YANG DIMODIFIKASI */}
             <div className="lg:col-span-2 bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden flex flex-col h-full min-h-[60vh]">
-                <div className="p-6 md:p-8 border-b"><h3 className="text-xl font-bold">Daftar Pinjaman Berjalan</h3></div>
-                <div className="overflow-x-auto p-4 flex-1 custom-scrollbar">
+                <div className="p-6 md:p-8 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
+                    <h3 className="text-xl font-bold">Daftar Pinjaman Berjalan</h3>
+                    
+                    {/* INPUT PENCARIAN BARU */}
+                    <div className="relative w-full sm:w-64">
+                        <i className="fas fa-search absolute left-4 top-3 text-slate-400"></i>
+                        <input 
+                            type="text" 
+                            placeholder="Cari Nama / Judul..." 
+                            className="w-full bg-slate-50 border border-slate-200 pl-11 pr-4 py-2.5 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-200 focus:outline-none transition-all" 
+                            value={searchBerjalan} 
+                            onChange={e => setSearchBerjalan(e.target.value)} 
+                        />
+                    </div>
+                </div>
+                <div className="overflow-x-auto p-4 flex-1">
                     <table className="w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-indigo-50/50 text-indigo-600 font-bold uppercase text-[11px] rounded-xl">
                             <tr><th className="py-4 px-6 rounded-l-2xl">Peminjam</th><th className="py-4 px-6">Buku & Kode</th><th className="py-4 px-6">Batas Waktu</th><th className="py-4 px-6 text-right rounded-r-2xl">Aksi</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                            {data.filter(d => d.status === 'Dipinjam').map(i => (
+                            {/* LOGIKA FILTER PENCARIAN DITERAPKAN DI SINI */}
+                            {data.filter(d => {
+                                if (d.status !== 'Dipinjam') return false;
+                                if (!searchBerjalan) return true; // Tampilkan semua jika kotak pencarian kosong
+                                
+                                const q = searchBerjalan.toLowerCase();
+                                return (d.namaPeminjam || '').toLowerCase().includes(q) || 
+                                       (d.judulBuku || '').toLowerCase().includes(q) || 
+                                       (d.kodeEksemplar || '').toLowerCase().includes(q);
+                            }).map(i => (
                                 <tr key={i.id} className="hover:bg-slate-50/80 group">
                                     <td className="py-4 px-6"><span onClick={() => oM(i)} className="font-bold cursor-pointer hover:text-indigo-600">{i.namaPeminjam}</span></td>
                                     <td className="py-4 px-6"><p className="font-semibold">{i.judulBuku}</p><span className="text-[10px] font-mono bg-slate-100 px-2 py-0.5 rounded">{i.kodeEksemplar || i.isbn}</span>{i.isPaket && <span className="ml-2 text-[9px] font-black bg-purple-100 text-purple-600 px-2 py-0.5 rounded uppercase">Paket</span>}</td>
-                                    <td className="py-4 px-6"><span className="px-3 py-1.5 font-black rounded-lg bg-red-50 text-red-600 border border-red-100">{new Date(i.tglHarusKembali).toLocaleDateString('id-ID')}</span></td>
-                                    <td className="py-4 px-6 flex justify-end opacity-100 md:opacity-0 group-hover:opacity-100"><button onClick={() => oM(i)} className="w-8 h-8 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center hover:bg-blue-100"><i className="fas fa-edit"></i></button></td>
+                                    <td className="py-4 px-6"><span className="px-3 py-1.5 font-black rounded-lg bg-red-50 text-red-600 border border-red-100">{formatDate(i.tglHarusKembali)}</span></td>
+                                    <td className="py-4 px-6 flex justify-end opacity-100 md:opacity-0 group-hover:opacity-100"><button onClick={() => oM(i)} className="w-8 h-8 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center"><i className="fas fa-edit"></i></button></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -2693,41 +2890,28 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                 </div>
             </div>
 
-            {/* MODAL DETAIL (Tidak diubah) */}
+            {/* MODAL DETAIL PINJAMAN */}
             {sL && (
                 <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-4" onClick={() => setSL(null)}>
                     <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md p-8 animate-[bounceIn_0.3s_ease-out]" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center border-b pb-4 mb-5"><h3 className="text-xl font-black"><i className="fas fa-info-circle text-indigo-500 mr-2"></i> Detail Pinjaman</h3><button onClick={() => setSL(null)} className="w-8 h-8 bg-slate-100 rounded-full hover:bg-slate-200"><i className="fas fa-times"></i></button></div>
+                        <div className="flex justify-between items-center border-b pb-4 mb-5"><h3 className="text-xl font-black"><i className="fas fa-info-circle text-indigo-500 mr-2"></i> Detail Pinjaman</h3><button onClick={() => setSL(null)} className="w-8 h-8 bg-slate-100 rounded-full"><i className="fas fa-times"></i></button></div>
                         <div className="space-y-5">
                             <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Identitas Peminjam</p><p className="text-lg font-black text-indigo-900">{sL.namaPeminjam}</p></div>
                             <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Buku yang Dipinjam</p><p className="text-base font-bold text-slate-800 leading-tight">{sL.judulBuku}</p><div className="mt-1.5 inline-flex items-center gap-2 bg-slate-100 px-2.5 py-1 rounded border border-slate-200"><i className="fas fa-barcode text-slate-400 text-xs"></i><p className="text-xs font-mono font-bold text-slate-600">{sL.kodeEksemplar || sL.isbn}</p></div></div>
                             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border">
-                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Tanggal Pinjam</p>{iE ? (<input type="date" className="w-full text-xs font-bold bg-white border rounded p-1.5" value={eF.tglPinjam} onChange={e => setEF({ ...eF, tglPinjam: e.target.value })} />) : (<p className="text-sm font-bold">{new Date(sL.tglPinjam).toLocaleDateString('id-ID')}</p>)}</div>
-                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Batas Kembali</p>{iE ? (<input type="date" className="w-full text-xs font-bold text-rose-600 bg-white border rounded p-1.5" value={eF.tglHarusKembali} onChange={e => setEF({ ...eF, tglHarusKembali: e.target.value })} />) : (<p className="text-sm font-bold text-rose-600">{new Date(sL.tglHarusKembali).toLocaleDateString('id-ID')}</p>)}</div>
+                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Tanggal Pinjam</p>{iE ? (<input type="date" className="w-full text-xs font-bold bg-white border rounded p-1.5" value={eF.tglPinjam} onChange={e => setEF({ ...eF, tglPinjam: e.target.value })} />) : (<p className="text-sm font-bold">{formatDate(sL.tglPinjam)}</p>)}</div>
+                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Batas Kembali</p>{iE ? (<input type="date" className="w-full text-xs font-bold text-rose-600 bg-white border rounded p-1.5" value={eF.tglHarusKembali} onChange={e => setEF({ ...eF, tglHarusKembali: e.target.value })} />) : (<p className="text-sm font-bold text-rose-600">{formatDate(sL.tglHarusKembali)}</p>)}</div>
                             </div>
                             <div className="flex justify-between items-center pt-2"><p className="text-sm font-bold text-slate-500">Status Saat Ini:</p><span className="inline-block px-4 py-2 font-black rounded-xl bg-amber-50 text-amber-600 border border-amber-100 text-xs uppercase shadow-sm">{sL.status}</span></div>
                         </div>
                         <div className="mt-8 pt-5 border-t flex justify-between gap-3">
-                            <button onClick={hCT} className="px-4 py-2 bg-rose-50 text-rose-600 font-bold text-xs rounded-xl border border-rose-100 hover:bg-rose-100"><i className="fas fa-trash-alt mr-2"></i> Batalkan</button>
+                            <button onClick={hCT} className="px-4 py-2 bg-rose-50 text-rose-600 font-bold text-xs rounded-xl border border-rose-100"><i className="fas fa-trash-alt mr-2"></i> Batalkan</button>
                             {iE ? (
                                 <div className="flex gap-2"><button onClick={() => setIE(false)} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl">Batal</button><button onClick={hSE} className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-md"><i className="fas fa-save mr-2"></i> Simpan</button></div>
                             ) : (
-                                <button onClick={() => setIE(true)} className="px-4 py-2 bg-blue-50 text-blue-600 font-bold text-xs rounded-xl border border-blue-100 hover:bg-blue-100"><i className="fas fa-edit mr-2"></i> Edit Tanggal</button>
+                                <button onClick={() => setIE(true)} className="px-4 py-2 bg-blue-50 text-blue-600 font-bold text-xs rounded-xl border border-blue-100"><i className="fas fa-edit mr-2"></i> Edit Tanggal</button>
                             )}
                         </div>
-                    </div>
-                </div>
-            )}
-
-            {/* SPLASH SCREEN KHUSUS BERHASIL (Auto-Dismiss) */}
-            {showSplash && (
-                <div className="fixed inset-0 bg-slate-900/40 z-[99999] flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white rounded-3xl p-8 max-w-[280px] w-full text-center shadow-2xl animate-[zoomIn_0.2s_ease-out]">
-                        <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg shadow-emerald-200">
-                            <i className="fas fa-check"></i>
-                        </div>
-                        <h3 className="text-xl font-black text-slate-800 mb-1">Berhasil</h3>
-                        <p className="text-sm font-medium text-slate-400">Sirkulasi dicatat!</p>
                     </div>
                 </div>
             )}
@@ -3370,6 +3554,7 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
 
 
         const App = () => {
+            const [pSisaItems, setPSisaItems] = useState([]);
             const [fbU, setFbU] = useState(null);
             const [cU, setCU] = useState(() => { try { const s = sessionStorage.getItem('perpus_current_user'); return s ? JSON.parse(s) : null } catch (e) { return null } });
             const [aT, setAT] = useState(() => localStorage.getItem('perpus_active_tab') || 'dashboard');
@@ -3616,6 +3801,7 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
             
             if (pM) return (
                 <div className="bg-white text-black w-full min-h-screen m-0 p-0 absolute top-0 left-0 z-50">
+                    {pM === 'label_sisa' && <PrintLabelSisaView items={pSisaItems} sekolah={sekolah} onClose={() => setPM(false)} />}
                     {pM === 'label_hilang' && <PrintLabelHilangView items={pHilangItems} sekolah={sekolah} buku={buku} onClose={() => setPM(false)} />}
                     {pM === 'buku_pdf' && <PrintDataBukuView buku={buku} sekolah={sekolah} filter={fBuku} />}
                     {/* KUNCI 2: Filter diperketat agar mengabaikan koma di akhir & filterText dimasukkan */}
@@ -3662,6 +3848,7 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                                     <NI icon={<i className="fas fa-user-tie"></i>} label="Administrasi" id="administrasi" />
                                     <NI icon={<i className="fas fa-users"></i>} label="Data Anggota" id="anggota" />
                                     <NI icon={<i className="fas fa-book"></i>} label="Daftar Buku" id="buku" />
+                                        <NI icon={<i className="fas fa-clipboard-check text-teal-400"></i>} label="Audit Eksemplar" id="audit" />
                                     <NI icon={<i className="fas fa-box-archive text-orange-400"></i>} label="Reduksi Buku" id="reduksi" />
                                     <NI icon={<i className="fas fa-book-open"></i>} label="Pinjam Buku" id="pinjam" />
                                     <NI icon={<i className="fab fa-whatsapp text-emerald-400"></i>} label="Peringatan WA" id="peringatan" />
@@ -3719,7 +3906,8 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                             <div className={`mx-auto ${iFS ? 'max-w-full h-full' : 'max-w-[90rem] space-y-8 pb-10'}`}>
                                 {aT === 'dashboard' && <DashboardView anggota={anggota} buku={buku} peminjaman={peminjaman} kehadiran={kehadiran} sekolah={sekolah} onUserClick={setSBiodata} />}
                                 {aT === 'anggota' && <AnggotaView data={anggota} onAdd={d => aD('anggota', d)} onUpdate={(i, d) => uD('anggota', i, d)} onDelete={i => sC('Hapus', 'Yakin?', () => dD('anggota', i))} onDeleteMany={is => is.forEach(i => dD('anggota', i))} showAlert={sA} showConfirm={sC} filter={fA} setFilter={setFA} onPrint={hP} sekolah={sekolah} onUpdatePengaturan={uS} />}
-                                {aT === 'buku' && <BukuView data={buku} onAdd={d => aD('buku', d)} onUpdate={(i, d) => uD('buku', i, d)} onDelete={i => sC('Hapus', 'Yakin?', () => dD('buku', i))} showAlert={sA} onPrint={hP} filter={fBuku} setFilter={setFBuku} />}
+                                {aT === 'buku' && <BukuView data={buku} peminjaman={peminjaman} onAdd={d => aD('buku', d)} onUpdate={(i, d) => uD('buku', i, d)} onDelete={i => sC('Hapus', 'Yakin?', () => dD('buku', i))} showAlert={sA} onPrint={hP} filter={fBuku} setFilter={setFBuku} />}
+                                {aT === 'audit' && <AuditEksemplarView buku={buku} peminjaman={peminjaman} onPrintSisa={items => { setPSisaItems(items); setPM('label_sisa'); }} />}
                                 {aT === 'reduksi' && <ReduksiView data={buku} onUpdate={(i, d) => uD('buku', i, d)} onDelete={i => sC('Hapus Permanen', 'Yakin?', () => dD('buku', i))} onPrint={hP} filter={fRed} setFilter={setFRed} />}
                                 {aT === 'hadir' && <HadirView data={kehadiran} anggota={anggota} buku={buku} peminjaman={peminjaman} quotes={quotes} onAdd={d => aD('kehadiran', d)} onAddQuote={d => aD('quotes', d)} onDeleteQuote={i => sC('Hapus Quote', 'Yakin?', () => dD('quotes', i))} showAlert={sA} sekolah={sekolah} onUserClick={setSBiodata} />}
                                 {aT === 'pinjam' && <PinjamView data={peminjaman} anggota={anggota} buku={buku} sekolah={sekolah} onAdd={d => aD('peminjaman', d)} onUpdate={(i, d) => uD('peminjaman', i, d)} onDelete={i => dD('peminjaman', i)} onUpdateBuku={uD} showAlert={sA} showConfirm={sC} />}
