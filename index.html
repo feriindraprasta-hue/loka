@@ -862,13 +862,14 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
 
         const PrintLabelSisaView = ({ items, sekolah, onClose }) => {
             const [page, setPage] = useState(1);
-            const limit = 50; // Lebih sedikit per halaman karena ukurannya memanjang ke samping
+            const limit = 50; 
 
             const totalPages = Math.ceil(items.length / limit) || 1;
             const currentBatch = items.slice((page - 1) * limit, page * limit);
 
             return (
-                <div id="print-area" className="relative min-h-screen bg-slate-100 pb-10">
+                // PERBAIKAN: bg-slate-100 diubah menjadi bg-white di baris bawah ini
+                <div id="print-area" className="relative min-h-screen bg-white pb-10">
                     <div className="print:hidden fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 flex justify-between items-center shadow-2xl z-[99999]">
                         <div className="flex items-center gap-4">
                             <button onClick={onClose} className="w-10 h-10 shrink-0 bg-slate-800 hover:bg-rose-600 rounded-full flex justify-center items-center transition-colors"><i className="fas fa-arrow-left"></i></button>
@@ -916,17 +917,12 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
                         <div className="print-container">
                             {currentBatch.map((i, idx) => (
                                 <div key={idx} className="label-wrapper">
-                                    {/* 1. Kotak Kiri (Logo Sekolah) */}
                                     <div className="fold-part">
                                         {sekolah?.logo && (
                                             <img src={sekolah.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                                         )}
                                     </div>
-                                    
-                                    {/* 2. Kotak Tengah (Nomor Panggil Warna Kuning) */}
                                     <div className="spine-part" style={{ whiteSpace: 'pre-line' }}>{i.spineCallNumber}</div>
-                                    
-                                    {/* 3. Kotak Kanan (Barcode & Header Ungu) */}
                                     <div className="barcode-part">
                                         <div className="barcode-header">{sekolah?.nama || 'PERPUSTAKAAN'}</div>
                                         <div className="barcode-body">
@@ -2893,21 +2889,17 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
     
     const [searchBerjalan, setSearchBerjalan] = useState('');
 
-    // REF UNTUK AUTO-FOCUS KE IDENTITAS PEMINJAM
     const identitasRef = useRef(null);
     useEffect(() => {
-        // Otomatis fokus ke kolom pencarian identitas saat menu dibuka
         setTimeout(() => {
             if (identitasRef.current) identitasRef.current.focus();
         }, 100);
     }, []);
 
-    // TRIK ANTI-BLANK: Pastikan data selalu berupa Array
     const dAnggota = anggota || [];
     const dBuku = buku || [];
     const dTransaksi = data || [];
 
-    // Pencarian super aman: Mengabaikan huruf besar/kecil DAN spasi
     const hSC = e => { 
         const vRaw = e.target.value; setSQ(vRaw); setSD(true); 
         const vClean = String(vRaw).replace(/[\s\*]+/g, '').toUpperCase();
@@ -2955,7 +2947,7 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             const xid = String(x?.id || '').replace(/\s+/g, '').toUpperCase();
 
             if (ni && (ni === scanS || ni === baseCode)) return true;
-            if (isb && (isb === scanS || isb === baseCode)) return true;
+            if (isb && (isb === scanS || baseCode === isb)) return true;
             if (xid && (xid === scanS || xid === baseCode)) return true;
             
             if (ni && (getShortBarcode(ni) === scanS || getShortBarcode(ni) === baseCode)) return true;
@@ -3009,20 +3001,14 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
     const hSE = () => { onUpdate(sL.id, { tglPinjam: eF.tglPinjam, tglHarusKembali: eF.tglHarusKembali }); setSL({ ...sL, ...eF }); setIE(false); showAlert('Berhasil', 'Diperbarui.', 'success'); };
     const hCT = () => showConfirm('Batal', 'Yakin batalkan? Stok kembali.', () => { const b = dBuku.find(x => x.id === sL.idBuku); if (b) onUpdateBuku('buku', b.id, { stock: parseInt(b.stock || 0) + 1 }); onDelete(sL.id); setSL(null); showAlert('Dibatalkan', 'Dihapus.', 'success'); });
 
-    // ==========================================
-    // LOGIKA FILTER TABEL CERDAS UNTUK MERINGANKAN CACHE
-    // ==========================================
     const filteredBerjalan = useMemo(() => {
-        // Ambil semua data yang sedang dipinjam (Di-reverse agar yang paling baru di atas)
         let pinjamAktif = dTransaksi.filter(d => d.status === 'Dipinjam').reverse();
 
         if (sA) {
-            // JIKA IDENTITAS DIPILIH: Tampilkan SEMUA buku yang dipegang siswa ini
             return pinjamAktif.filter(d => d.idAnggota === sA.id);
         } 
         
         if (searchBerjalan) {
-            // JIKA ADA KATA KUNCI PENCARIAN DI KOTAK KANAN
             const q = searchBerjalan.toLowerCase();
             return pinjamAktif.filter(d => 
                 (d.namaPeminjam || '').toLowerCase().includes(q) || 
@@ -3031,7 +3017,6 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             );
         }
 
-        // JIKA KOSONG SEMUA: Tampilkan hanya 10 transaksi terbaru untuk meringankan Browser
         return pinjamAktif.slice(0, 10);
     }, [dTransaksi, sA, searchBerjalan]);
 
@@ -3056,7 +3041,6 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                         ) : (
                             <div className="relative">
                                 <i className="fas fa-search absolute left-4 top-3.5 text-indigo-400"></i>
-                                {/* REF DITAMBAHKAN DI SINI UNTUK AUTO-FOCUS */}
                                 <input ref={identitasRef} type="text" placeholder="Ketik Nama/Scan NISN..." className="input-field pl-11 shadow-inner focus:ring-4 focus:ring-indigo-100 transition-all" value={sQ} onChange={hSC} onFocus={() => setSD(true)} onBlur={() => setTimeout(() => setSD(false), 200)} />
                                 {sD && sQ.length > 1 && (
                                     <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl max-h-60 overflow-y-auto z-50 border border-slate-100 p-2">
@@ -3130,7 +3114,13 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                             ) : (
                                 filteredBerjalan.map(i => (
                                     <tr key={i.id} className={`group transition-colors ${sA ? 'bg-indigo-50/30 hover:bg-indigo-50' : 'hover:bg-slate-50'}`}>
-                                        <td className="py-4 px-6"><span onClick={() => oM(i)} className="font-black text-slate-700 cursor-pointer hover:text-indigo-600 transition-colors">{i.namaPeminjam}</span></td>
+                                        <td className="py-4 px-6">
+                                            <span onClick={() => oM(i)} className="font-black text-slate-700 cursor-pointer hover:text-indigo-600 transition-colors block">{i.namaPeminjam}</span>
+                                            {(() => {
+                                                const pem = dAnggota.find(a => a.id === i.idAnggota);
+                                                return pem ? <span className="text-[10px] font-bold text-indigo-500 uppercase mt-0.5 block">{pem.kategori === 'Siswa' ? formatKelasSiswa(pem, sekolah?.daftarJurusan) : pem.kategori}</span> : null;
+                                            })()}
+                                        </td>
                                         <td className="py-4 px-6"><p className="font-bold text-slate-800">{i.judulBuku}</p><span className="text-[10px] font-mono bg-white border border-slate-200 shadow-sm px-2 py-0.5 rounded text-slate-500 mt-1 inline-block">{i.kodeEksemplar || i.isbn}</span>{i.isPaket && <span className="ml-2 text-[9px] font-black bg-purple-100 text-purple-600 border border-purple-200 px-2 py-0.5 rounded uppercase shadow-sm">Paket</span>}</td>
                                         <td className="py-4 px-6"><span className="px-3 py-1.5 font-black rounded-lg bg-red-50 text-red-600 border border-red-100 shadow-sm">{formatDate(i.tglHarusKembali)}</span></td>
                                         <td className="py-4 px-6 flex justify-end opacity-100 md:opacity-0 group-hover:opacity-100"><button onClick={() => oM(i)} className="w-8 h-8 bg-white border shadow-sm text-blue-500 rounded-lg flex items-center justify-center hover:bg-blue-500 hover:text-white transition-colors hover:scale-110"><i className="fas fa-edit"></i></button></td>
@@ -3147,7 +3137,14 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md p-8 animate-[bounceIn_0.3s_ease-out]" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-5"><h3 className="text-xl font-black"><i className="fas fa-info-circle text-indigo-500 mr-2"></i> Detail Pinjaman</h3><button onClick={() => setSL(null)} className="w-8 h-8 bg-slate-100 hover:bg-rose-100 hover:text-rose-600 transition-colors rounded-full"><i className="fas fa-times"></i></button></div>
                         <div className="space-y-5">
-                            <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Identitas Peminjam</p><p className="text-lg font-black text-indigo-900">{sL.namaPeminjam}</p></div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Identitas Peminjam</p>
+                                <p className="text-lg font-black text-indigo-900">{sL.namaPeminjam}</p>
+                                {(() => {
+                                    const pemModal = dAnggota.find(a => a.id === sL.idAnggota);
+                                    return pemModal ? <p className="text-xs font-bold text-indigo-500 uppercase mt-0.5">{pemModal.kategori === 'Siswa' ? formatKelasSiswa(pemModal, sekolah?.daftarJurusan) : pemModal.kategori}</p> : null;
+                                })()}
+                            </div>
                             <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Buku yang Dipinjam</p><p className="text-base font-bold text-slate-800 leading-tight">{sL.judulBuku}</p><div className="mt-1.5 inline-flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded border border-slate-200"><i className="fas fa-barcode text-slate-400 text-xs"></i><p className="text-xs font-mono font-bold text-slate-600">{sL.kodeEksemplar || sL.isbn}</p></div></div>
                             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 shadow-inner">
                                 <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Tanggal Pinjam</p>{iE ? (<input type="date" className="w-full text-xs font-bold bg-white border rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200" value={eF.tglPinjam} onChange={e => setEF({ ...eF, tglPinjam: e.target.value })} />) : (<p className="text-sm font-bold">{formatDate(sL.tglPinjam)}</p>)}</div>
