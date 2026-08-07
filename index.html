@@ -862,7 +862,7 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
 
         const PrintLabelSisaView = ({ items, sekolah, onClose }) => {
             const [page, setPage] = useState(1);
-            const limit = 50;
+            const limit = 50; // Lebih sedikit per halaman karena ukurannya memanjang ke samping
 
             const totalPages = Math.ceil(items.length / limit) || 1;
             const currentBatch = items.slice((page - 1) * limit, page * limit);
@@ -896,22 +896,39 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
                             }
                             #print-area { font-family: 'Plus Jakarta Sans', sans-serif; width: 100%; min-height: 100vh; box-sizing: border-box; padding: 10mm; }
                             .print-container { display: flex; flex-wrap: wrap; gap: 5mm; justify-content: center; align-content: flex-start; width: 100%; }
+                            
+                            /* Layout dasar wadah 3 kotak */
                             .label-wrapper { display: flex; align-items: center; gap: 2mm; padding: 2.5mm; border: 1.5px dashed #cbd5e1; border-radius: 10px; width: 88mm; break-inside: avoid; page-break-inside: avoid; background: #fff; }
+                            
+                            /* Kotak Kanan (Barcode Utama) */
                             .barcode-part { width: 45mm; height: 30mm; border: 1px solid #94a3b8; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
                             .barcode-header { background-color: #4f46e5 !important; color: #fff !important; font-size: 7pt; font-weight: 800; text-align: center; padding: 3px 4px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .5px; }
                             .barcode-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; }
                             .barcode-copy { font-size: 6pt; font-weight: 700; margin-top: 1px; color: #64748b; }
+                            
+                            /* Kotak Tengah (Spine / Punggung Buku) dengan warna KUNING PUDAR */
                             .spine-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #fdf8ea !important; display: flex; align-items: center; justify-content: center; padding: 2px; text-align: center; font-size: 7.5pt; font-weight: 900; line-height: 1.3; color: #0f172a; }
-                            .fold-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #ffffff !important; display: flex; align-items: center; justify-content: center; }
+                            
+                            /* Kotak Kiri (Fold / Logo Sekolah) dengan warna PUTIH BERSIH */
+                            .fold-part { width: 18mm; height: 30mm; border: 1.5px solid #0f172a; background-color: #ffffff !important; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 2px; }
                         `}</style>
                         
                         <div className="print-container">
                             {currentBatch.map((i, idx) => (
                                 <div key={idx} className="label-wrapper">
-                                    <div className="fold-part"></div>
+                                    {/* 1. Kotak Kiri (Logo Sekolah) */}
+                                    <div className="fold-part">
+                                        {sekolah?.logo && (
+                                            <img src={sekolah.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                        )}
+                                    </div>
+                                    
+                                    {/* 2. Kotak Tengah (Nomor Panggil Warna Kuning) */}
                                     <div className="spine-part" style={{ whiteSpace: 'pre-line' }}>{i.spineCallNumber}</div>
+                                    
+                                    {/* 3. Kotak Kanan (Barcode & Header Ungu) */}
                                     <div className="barcode-part">
-                                        <div className="barcode-header">{sekolah.nama || 'PERPUSTAKAAN'}</div>
+                                        <div className="barcode-header">{sekolah?.nama || 'PERPUSTAKAAN'}</div>
                                         <div className="barcode-body">
                                             <div style={{ display: 'flex', justifyContent: 'center', width: '100%', padding: '8px 0', margin: '2px 0' }}>
                                                 <img src={`https://barcodeapi.org/api/128/${(i.isbn || '').replace(/\D/g, '')}-${i.copyNum}`} alt="barcode" style={{ height: '50px', width: '100%', maxWidth: '5cm', objectFit: 'fill' }} />
@@ -1974,369 +1991,415 @@ const AuditEksemplarView = ({ buku, peminjaman, onPrintSisa }) => {
     );
 };
 
-      const AnggotaView = ({ data, onAdd, onUpdate, onDelete, onDeleteMany, showAlert, showConfirm, filter, setFilter, onPrint, sekolah, onUpdatePengaturan }) => {
-            const iF = { nisn: '', nama: '', tempatLahir: '', tanggalLahir: '', jenisKelamin: 'L', alamat: '', telepon: '', kategori: 'Siswa', jurusan: '', kelasJurusan: '', kelas: 'X', noKelas: '', tahunPelajaran: '', status: 'Aktif', foto: '' };
-            const [io, setIo] = useState(false), [eId, setEId] = useState(null), [f, setF] = useState(iF), [sDM, setSDM] = useState(false), [dT, setDT] = useState('all'), [dV, setDV] = useState(''), [sKJ, setSKJ] = useState(false), [jF, setJF] = useState({ nama: '', singkatan: '' });
-            const dJ = sekolah?.daftarJurusan || DEFAULT_JURUSAN;
-            
-            const [fKat, setFKat] = useState('Semua'), [fKls, setFKls] = useState('Semua'), [fJur, setFJur] = useState('Semua'), [fThn, setFThn] = useState('Semua');
-            const [isProsesNK, setIsProsesNK] = useState(false);
-            const rkp = useMemo(() => { 
-                const a = data.filter(d => d.status === 'Aktif'); 
-                return { 
-                    t: a.length, 
-                    s: a.filter(d => d.kategori === 'Siswa').length, 
-                    g: a.filter(d => d.kategori === 'Guru').length, 
-                    k: a.filter(d => d.kategori === 'Karyawan').length,
-                    ks: a.filter(d => d.kategori === 'Kepala Sekolah').length 
-                } 
-            }, [data]);
-            const uKlsLengkap = useMemo(() => [...new Set(data.filter(d => d.kategori === 'Siswa').map(d => formatKelasSiswa(d, dJ)).filter(Boolean))].sort(), [data, dJ]);
-            const uJurusan = useMemo(() => [...new Set(data.filter(d => d.kategori === 'Siswa' && d.jurusan).map(d => d.jurusan))].sort(), [data]);
-            const uThn = useMemo(() => [...new Set(data.filter(d => d.kategori === 'Siswa' && d.tahunPelajaran).map(d => d.tahunPelajaran))].sort(), [data]);
-            
-            useEffect(() => { const kD = e => { if (e.ctrlKey && e.key.toLowerCase() === 'q') { e.preventDefault(); setSDM(p => !p); } }; window.addEventListener('keydown', kD); return () => window.removeEventListener('keydown', kD); }, []);
-
-            const fD = data.filter(i => {
-            const mT = i.nama.toLowerCase().includes(filter.toLowerCase()) || (i.nisn && i.nisn.toLowerCase().includes(filter.toLowerCase())) || (i.kelas && i.kelas.toLowerCase().includes(filter.toLowerCase())) || i.kategori.toLowerCase().includes(filter.toLowerCase()) || i.id.toLowerCase().includes(filter.toLowerCase());
-            const mK = fKat === 'Semua' || i.kategori === fKat;
-            const mKl = fKls === 'Semua' || formatKelasSiswa(i, dJ) === fKls;
-            const mJur = fJur === 'Semua' || i.jurusan === fJur;
-            const mTh = fThn === 'Semua' || i.tahunPelajaran === fThn;
-            return mT && mK && mKl && mJur && mTh;
-            }).sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
-
-            const hS = e => { e.preventDefault(); const d = { ...f, tglDaftar: new Date().toISOString() }; if (eId) onUpdate(eId, d); else onAdd(d); setIo(false); setEId(null); setF(iF); showAlert('Berhasil', `Data ${eId ? 'diperbarui' : 'ditambahkan'}.`, 'success'); };
-            const hC = e => { const l = e.target.files[0]; if (l) { if (l.size > 500000) return showAlert("File Kebesaran", "Maksimal ukuran foto 500KB", "warning"); const r = new FileReader(); r.onloadend = () => setF({ ...f, foto: r.result }); r.readAsDataURL(l); } };
-
-           const hNK = () => showConfirm('Kenaikan Kelas', 'Yakin memproses kenaikan kelas masal? Jangan tutup halaman selama proses berlangsung.', async () => { 
-    setIsProsesNK(true);
-    let c = 0; 
+     const AnggotaView = ({ data, onAdd, onUpdate, onDelete, onDeleteMany, showAlert, showConfirm, filter, setFilter, onPrint, sekolah, onUpdatePengaturan }) => {
+    const iF = { nisn: '', nama: '', tempatLahir: '', tanggalLahir: '', jenisKelamin: 'L', alamat: '', telepon: '', kategori: 'Siswa', jurusan: '', kelasJurusan: '', kelas: 'X', noKelas: '', tahunPelajaran: '', status: 'Aktif', foto: '' };
+    const [io, setIo] = useState(false), [eId, setEId] = useState(null), [f, setF] = useState(iF), [sDM, setSDM] = useState(false), [dT, setDT] = useState('all'), [dV, setDV] = useState('');
+    const dJ = sekolah?.daftarJurusan || DEFAULT_JURUSAN;
     
-    // 1. Kumpulkan data
-    const toUpdate = [];
-    data.forEach(i => { 
-        if (i.kategori === 'Siswa' && i.status === 'Aktif') { 
-            if (i.kelas === 'X' || i.kelas === '10') { toUpdate.push({ id: i.id, changes: { kelas: 'XI' } }); } 
-            else if (i.kelas === 'XI' || i.kelas === '11') { toUpdate.push({ id: i.id, changes: { kelas: 'XII' } }); } 
-            else if (i.kelas === 'XII' || i.kelas === '12') { toUpdate.push({ id: i.id, changes: { status: 'Arsip' } }); } 
+    const [fKat, setFKat] = useState('Semua'), [fKls, setFKls] = useState('Semua'), [fJur, setFJur] = useState('Semua'), [fThn, setFThn] = useState('Semua');
+    const [isProsesNK, setIsProsesNK] = useState(false);
+
+    // STATE BARU UNTUK PAGINATION (PAGINASI)
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 25; // Jumlah anggota yang tampil per halaman
+
+    const rkp = useMemo(() => { 
+        const a = data.filter(d => d.status === 'Aktif'); 
+        return { 
+            t: a.length, 
+            s: a.filter(d => d.kategori === 'Siswa').length, 
+            g: a.filter(d => d.kategori === 'Guru').length, 
+            k: a.filter(d => d.kategori === 'Karyawan').length,
+            ks: a.filter(d => d.kategori === 'Kepala Sekolah').length 
         } 
+    }, [data]);
+    
+    const uKlsLengkap = useMemo(() => [...new Set(data.filter(d => d.kategori === 'Siswa').map(d => formatKelasSiswa(d, dJ)).filter(Boolean))].sort(), [data, dJ]);
+    const uJurusan = useMemo(() => [...new Set(data.filter(d => d.kategori === 'Siswa' && d.jurusan).map(d => d.jurusan))].sort(), [data]);
+    const uThn = useMemo(() => [...new Set(data.filter(d => d.kategori === 'Siswa' && d.tahunPelajaran).map(d => d.tahunPelajaran))].sort(), [data]);
+    
+    useEffect(() => { const kD = e => { if (e.ctrlKey && e.key.toLowerCase() === 'q') { e.preventDefault(); setSDM(p => !p); } }; window.addEventListener('keydown', kD); return () => window.removeEventListener('keydown', kD); }, []);
+
+    // Filter Seluruh Data
+    const fD = data.filter(i => {
+        const mT = i.nama.toLowerCase().includes((filter || '').toLowerCase()) || (i.nisn && i.nisn.toLowerCase().includes((filter || '').toLowerCase())) || (i.kelas && i.kelas.toLowerCase().includes((filter || '').toLowerCase())) || i.kategori.toLowerCase().includes((filter || '').toLowerCase()) || i.id.toLowerCase().includes((filter || '').toLowerCase());
+        const mK = fKat === 'Semua' || i.kategori === fKat;
+        const mKl = fKls === 'Semua' || formatKelasSiswa(i, dJ) === fKls;
+        const mJur = fJur === 'Semua' || i.jurusan === fJur;
+        const mTh = fThn === 'Semua' || i.tahunPelajaran === fThn;
+        return mT && mK && mKl && mJur && mTh;
+    }).sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
+
+    // LOGIKA PAGINATION
+    const totalPages = Math.ceil(fD.length / itemsPerPage) || 1;
+    const currentData = fD.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+    const hS = e => { e.preventDefault(); const d = { ...f, tglDaftar: new Date().toISOString() }; if (eId) onUpdate(eId, d); else onAdd(d); setIo(false); setEId(null); setF(iF); showAlert('Berhasil', `Data ${eId ? 'diperbarui' : 'ditambahkan'}.`, 'success'); };
+    const hC = e => { const l = e.target.files[0]; if (l) { if (l.size > 500000) return showAlert("File Kebesaran", "Maksimal ukuran foto 500KB", "warning"); const r = new FileReader(); r.onloadend = () => setF({ ...f, foto: r.result }); r.readAsDataURL(l); } };
+
+    const hNK = () => showConfirm('Kenaikan Kelas', 'Yakin memproses kenaikan kelas masal? Jangan tutup halaman selama proses berlangsung.', async () => { 
+        setIsProsesNK(true);
+        let c = 0; 
+        const toUpdate = [];
+        data.forEach(i => { 
+            if (i.kategori === 'Siswa' && i.status === 'Aktif') { 
+                if (i.kelas === 'X' || i.kelas === '10') { toUpdate.push({ id: i.id, changes: { kelas: 'XI' } }); } 
+                else if (i.kelas === 'XI' || i.kelas === '11') { toUpdate.push({ id: i.id, changes: { kelas: 'XII' } }); } 
+                else if (i.kelas === 'XII' || i.kelas === '12') { toUpdate.push({ id: i.id, changes: { status: 'Arsip' } }); } 
+            } 
+        });
+
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const chunkSize = 50; 
+        for (let i = 0; i < toUpdate.length; i += chunkSize) {
+            const chunk = toUpdate.slice(i, i + chunkSize);
+            await Promise.all(chunk.map(item => onUpdate(item.id, item.changes)));
+            c += chunk.length;
+            if (i + chunkSize < toUpdate.length) {
+                await delay(500); 
+            }
+        }
+
+        setIsProsesNK(false);
+        showAlert('Selesai', `Sukses! ${c} data anggota berhasil diperbarui.`, 'success'); 
     });
 
-    // 2. Fungsi pembuat jeda (delay)
-    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const hMD = () => {
+        let t = [];
+        if (dT === 'all') t = data.filter(a => a.kategori === 'Siswa');
+        else if (dT === 'kelas') { if (!dV) return showAlert('Error', 'Pilih kelas!', 'warning'); t = data.filter(a => a.kategori === 'Siswa' && a.kelas === dV); }
+        else if (dT === 'jurusan') { if (!dV) return showAlert('Error', 'Pilih jurusan!', 'warning'); t = data.filter(a => a.kategori === 'Siswa' && a.jurusan === dV); }
+        else if (dT === 'tahun') { if (!dV) return showAlert('Error', 'Isi tahun!', 'warning'); t = data.filter(a => a.kategori === 'Siswa' && a.tahunPelajaran === dV); }
+        if (t.length === 0) return showAlert('Info', 'Tidak ada data yg cocok.', 'info');
+        showConfirm('Hapus Massal', `Hapus ${t.length} siswa permanen?`, () => { onDeleteMany(t.map(a => a.id)); showAlert('Berhasil', `${t.length} data dihapus.`, 'success'); setSDM(false); });
+    };
+    
+    const hExp = () => { 
+        const ws = XLSX.utils.json_to_sheet(fD.map(r => ({
+            "NISN/NIP": r.nisn || '', "Nama Lengkap": r.nama || '', "L/P": r.jenisKelamin || '', "Tempat Lahir": r.tempatLahir || '',
+            "Tanggal Lahir": r.tanggalLahir || '', "Alamat": r.alamat || '', "No Telepon WA": r.telepon || '', "Kategori": r.kategori || '',
+            "Jurusan": r.jurusan || '', "Kelas": r.kelas || '', "No Kelas": r.noKelas || '', "Tahun Pelajaran": r.tahunPelajaran || '', "Status": r.status || 'Aktif'
+        })));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Data Anggota");
+        XLSX.writeFile(wb, "Export_Data_Anggota.xlsx");
+    };
 
-    // 3. Eksekusi bertahap
-    const chunkSize = 50; 
-    for (let i = 0; i < toUpdate.length; i += chunkSize) {
-        const chunk = toUpdate.slice(i, i + chunkSize);
-        
-        // Eksekusi 50 data
-        await Promise.all(chunk.map(item => onUpdate(item.id, item.changes)));
-        c += chunk.length;
-        
-        // Berikan jeda setengah detik sebelum lanjut ke 50 data berikutnya
-        if (i + chunkSize < toUpdate.length) {
-            await delay(500); 
-        }
-    }
-
-    setIsProsesNK(false);
-    showAlert('Selesai', `Sukses! ${c} data anggota berhasil diperbarui.`, 'success'); 
-});
-            const hMD = () => {
-                let t = [];
-                if (dT === 'all') t = data.filter(a => a.kategori === 'Siswa');
-                else if (dT === 'kelas') { if (!dV) return showAlert('Error', 'Pilih kelas!', 'warning'); t = data.filter(a => a.kategori === 'Siswa' && a.kelas === dV); }
-                else if (dT === 'jurusan') { if (!dV) return showAlert('Error', 'Pilih jurusan!', 'warning'); t = data.filter(a => a.kategori === 'Siswa' && a.jurusan === dV); }
-                else if (dT === 'tahun') { if (!dV) return showAlert('Error', 'Isi tahun!', 'warning'); t = data.filter(a => a.kategori === 'Siswa' && a.tahunPelajaran === dV); }
-                if (t.length === 0) return showAlert('Info', 'Tidak ada data yg cocok.', 'info');
-                showConfirm('Hapus Massal', `Hapus ${t.length} siswa permanen?`, () => { onDeleteMany(t.map(a => a.id)); showAlert('Berhasil', `${t.length} data dihapus.`, 'success'); setSDM(false); });
-            };
-            
-            const hExp = () => { 
-                const ws = XLSX.utils.json_to_sheet(fD.map(r => ({
-                    "NISN/NIP": r.nisn || '', "Nama Lengkap": r.nama || '', "L/P": r.jenisKelamin || '', "Tempat Lahir": r.tempatLahir || '',
-                    "Tanggal Lahir": r.tanggalLahir || '', "Alamat": r.alamat || '', "No Telepon WA": r.telepon || '', "Kategori": r.kategori || '',
-                    "Jurusan": r.jurusan || '', "Kelas": r.kelas || '', "No Kelas": r.noKelas || '', "Tahun Pelajaran": r.tahunPelajaran || '', "Status": r.status || 'Aktif'
-                })));
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Data Anggota");
-                XLSX.writeFile(wb, "Export_Data_Anggota.xlsx");
-            };
-
-            const hDownloadTemplate = () => {
-                const ws = XLSX.utils.json_to_sheet([{
-                    "NISN/NIP": "0051234567", "Nama Lengkap": "NAMA SISWA CONTOH", "L/P": "L", "Tempat Lahir": "Jember", "Tanggal Lahir": "2005-01-01",
-                    "Alamat": "Jl. Contoh No. 1", "No Telepon WA": "081234567890", "Kategori": "Siswa", "Jurusan": "Akuntansi", "Kelas": "X",
-                    "No Kelas": "1", "Tahun Pelajaran": "2025/2026", "Status": "Aktif"
-                }]);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Template Anggota");
-                XLSX.writeFile(wb, "Template_Import_Anggota.xlsx");
-            };
-            
-            const hImp = e => {
-                const l = e.target.files[0]; if (!l) return;
-                const r = new FileReader();
-                r.onload = ev => {
-                    try {
-                        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' }); 
-                        const sheetData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" }); 
-                        let c = 0;
-                        
-                        sheetData.forEach(rawRow => {
-                            const rw = {};
-                            for(let key in rawRow) { rw[key.toString().trim().toLowerCase()] = rawRow[key]; }
-                            const nama = rw["nama lengkap"] || rw["nama"] || rw["nama siswa"] || '';
-                            
-                            if (nama) {
-                                onAdd({ 
-                                    nisn: (rw["nisn/nip"] || rw["nisn"] || rw["nip"] || '').toString().replace(/\s/g, ''),
-                                    nama: formatNamaGelarPintar(nama), 
-                                    tempatLahir: (rw["tempat lahir"] || rw["tempat"] || '').toString(), 
-                                    tanggalLahir: (rw["tanggal lahir"] || rw["tgl lahir"] || rw["ttl"] || '').toString(), 
-                                    jenisKelamin: (rw["l/p"] || rw["jenis kelamin"] || rw["jk"] || 'L').toString().toUpperCase().charAt(0), 
-                                    alamat: (rw["alamat"] || '').toString(), 
-                                    telepon: (rw["no telepon wa"] || rw["telepon"] || rw["wa"] || rw["no wa"] || '').toString(), 
-                                    kategori: rw["kategori"] || 'Siswa', 
-                                    jurusan: rw["jurusan"] || '', 
-                                    kelasJurusan: getSingkatanJurusan(rw["jurusan"] || '', dJ), 
-                                    kelas: (rw["kelas"] || '').toString(), 
-                                    noKelas: (rw["no kelas"] || rw["no"] || '').toString(), 
-                                    tahunPelajaran: (rw["tahun pelajaran"] || rw["tahun"] || '').toString(), 
-                                    status: rw["status"] || 'Aktif', 
-                                    tglDaftar: new Date().toISOString() 
-                                });
-                                c++;
-                            }
+    const hDownloadTemplate = () => {
+        const ws = XLSX.utils.json_to_sheet([{
+            "NISN/NIP": "0051234567", "Nama Lengkap": "NAMA SISWA CONTOH", "L/P": "L", "Tempat Lahir": "Jember", "Tanggal Lahir": "2005-01-01",
+            "Alamat": "Jl. Contoh No. 1", "No Telepon WA": "081234567890", "Kategori": "Siswa", "Jurusan": "Akuntansi", "Kelas": "X",
+            "No Kelas": "1", "Tahun Pelajaran": "2025/2026", "Status": "Aktif"
+        }]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Template Anggota");
+        XLSX.writeFile(wb, "Template_Import_Anggota.xlsx");
+    };
+    
+    const hImp = e => {
+        const l = e.target.files[0]; if (!l) return;
+        const r = new FileReader();
+        r.onload = ev => {
+            try {
+                const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' }); 
+                const sheetData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" }); 
+                let c = 0;
+                
+                sheetData.forEach(rawRow => {
+                    const rw = {};
+                    for(let key in rawRow) { rw[key.toString().trim().toLowerCase()] = rawRow[key]; }
+                    const nama = rw["nama lengkap"] || rw["nama"] || rw["nama siswa"] || '';
+                    
+                    if (nama) {
+                        onAdd({ 
+                            nisn: (rw["nisn/nip"] || rw["nisn"] || rw["nip"] || '').toString().replace(/\s/g, ''),
+                            nama: formatNamaGelarPintar(nama), 
+                            tempatLahir: (rw["tempat lahir"] || rw["tempat"] || '').toString(), 
+                            tanggalLahir: (rw["tanggal lahir"] || rw["tgl lahir"] || rw["ttl"] || '').toString(), 
+                            jenisKelamin: (rw["l/p"] || rw["jenis kelamin"] || rw["jk"] || 'L').toString().toUpperCase().charAt(0), 
+                            alamat: (rw["alamat"] || '').toString(), 
+                            telepon: (rw["no telepon wa"] || rw["telepon"] || rw["wa"] || rw["no wa"] || '').toString(), 
+                            kategori: rw["kategori"] || 'Siswa', 
+                            jurusan: rw["jurusan"] || '', 
+                            kelasJurusan: getSingkatanJurusan(rw["jurusan"] || '', dJ), 
+                            kelas: (rw["kelas"] || '').toString(), 
+                            noKelas: (rw["no kelas"] || rw["no"] || '').toString(), 
+                            tahunPelajaran: (rw["tahun pelajaran"] || rw["tahun"] || '').toString(), 
+                            status: rw["status"] || 'Aktif', 
+                            tglDaftar: new Date().toISOString() 
                         });
-                        
-                        if(c > 0) { showAlert('Sukses', `Berhasil memproses import ${c} anggota!`, 'success'); } 
-                        else { showAlert('Peringatan', 'Gagal import! Pastikan file Excel memiliki kolom bernama "Nama Lengkap" atau "Nama".', 'warning'); }
-                    } catch (err) { 
-                        showAlert('Gagal', 'Format file Excel tidak sesuai atau rusak.', 'error'); 
-                        console.error(err); 
+                        c++;
                     }
-                    e.target.value = null;
-                };
-                r.readAsArrayBuffer(l);
-            };
-
-            return (
-                <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden">
-                    <div className="p-6 md:p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                        <h2 className="text-2xl font-black text-slate-800">Data Anggota</h2>
-                        <div className="relative w-full md:w-80">
-                            <i className="fas fa-search absolute left-5 top-3 text-indigo-400 text-lg"></i>
-                            <input type="text" autoFocus={true} placeholder="Cari..." className="input-field pl-12 py-2.5 text-sm" value={filter} onChange={e => setFilter(e.target.value)} />
-                        </div>
-                    </div>
-                    <div className="bg-slate-50/50 p-6 md:px-8 border-b border-slate-100 flex flex-col gap-5">
-                        <div className="flex flex-wrap gap-3">
-                            <div className="bg-indigo-50 border border-indigo-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-indigo-500 uppercase">Aktif</p><h4 className="text-2xl font-black text-indigo-700 leading-none">{rkp.t}</h4></div>
-                            <div className="bg-blue-50 border border-blue-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-blue-500 uppercase">Siswa</p><h4 className="text-2xl font-black text-blue-700 leading-none">{rkp.s}</h4></div>
-                            <div className="bg-emerald-50 border border-emerald-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-emerald-500 uppercase">Guru</p><h4 className="text-2xl font-black text-emerald-700 leading-none">{rkp.g}</h4></div>
-                            <div className="bg-amber-50 border border-amber-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-amber-500 uppercase">Karyawan</p><h4 className="text-2xl font-black text-amber-700 leading-none">{rkp.k}</h4></div>
-                            <div className="bg-purple-50 border border-purple-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-purple-500 uppercase">Kepsek</p><h4 className="text-2xl font-black text-purple-700 leading-none">{rkp.ks}</h4></div>
-                        </div>
-                        <div className="flex flex-wrap gap-3 items-center">
-                            <span className="text-xs font-bold text-slate-500 uppercase mr-1"><i className="fas fa-filter mr-1"></i> Filter:</span>
-                            <select className="input-field py-2 text-sm w-auto cursor-pointer" value={fKat} onChange={e => { setFKat(e.target.value); setFKls('Semua'); setFJur('Semua'); setFThn('Semua'); }}>
-                                <option value="Semua">Semua Kategori</option>
-                                <option value="Siswa">Siswa</option>
-                                <option value="Guru">Guru</option>
-                                <option value="Karyawan">Karyawan</option>
-                                <option value="Kepala Sekolah">Kepala Sekolah</option>
-                            </select>
-                            {fKat === 'Siswa' && (
-                                <>
-                                    <select className="input-field py-2 text-sm w-auto cursor-pointer max-w-[140px]" value={fKls} onChange={e => setFKls(e.target.value)}><option value="Semua">Semua Kelas</option>{uKlsLengkap.map(k => <option key={k} value={k}>{k}</option>)}</select>
-                                    <select className="input-field py-2 text-sm w-auto cursor-pointer max-w-[140px]" value={fJur} onChange={e => setFJur(e.target.value)}><option value="Semua">Semua Jurusan</option>{uJurusan.map(j => <option key={j} value={j}>{j}</option>)}</select>
-                                    <select className="input-field py-2 text-sm w-auto cursor-pointer max-w-[140px]" value={fThn} onChange={e => setFThn(e.target.value)}><option value="Semua">Semua Thn</option>{uThn.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                                </>
-                            )}
-                            <div className="ml-auto text-xs font-bold text-slate-500 bg-white px-4 py-2.5 rounded-xl border border-slate-200">Menampilkan <span className="text-indigo-600 font-black">{fD.length}</span></div>
-                        </div>
-                    </div>
-                    {sDM && (
-                        <div className="mx-6 md:mx-8 mt-6 bg-rose-50/50 rounded-2xl p-5 border border-rose-200 shadow-lg flex justify-between items-end gap-4">
-                            <div className="flex-1">
-                                <h4 className="text-rose-700 font-black mb-1">Hapus Massal (Ctrl+Q)</h4>
-                                <div className="flex gap-3">
-                                    <select className="input-field border-rose-200 py-2 text-sm" value={dT} onChange={e => { setDT(e.target.value); setDV(''); }}>
-                                        <option value="all">Seluruh Siswa</option><option value="kelas">Per Kelas</option><option value="jurusan">Per Jurusan</option><option value="tahun">Per Tahun</option>
-                                    </select>
-                                    {dT === 'kelas' && <select className="input-field border-rose-200 py-2 text-sm" value={dV} onChange={e => setDV(e.target.value)}><option value="">Pilih Kelas</option><option value="X">X</option><option value="XI">XI</option><option value="XII">XII</option></select>}
-                                    {dT === 'jurusan' && <select className="input-field border-rose-200 py-2 text-sm" value={dV} onChange={e => setDV(e.target.value)}><option value="">Pilih Jurusan</option>{dJ.map((j, i) => <option key={i} value={j.nama}>{j.nama}</option>)}</select>}
-                                    {dT === 'tahun' && <input type="text" className="input-field border-rose-200 py-2 text-sm" placeholder="Contoh: 2025/2026" value={dV} onChange={e => setDV(e.target.value)} />}
-                                </div>
-                            </div>
-                            <button onClick={hMD} className="bg-rose-600 text-white px-6 py-2.5 rounded-xl font-bold">Hapus</button>
-                        </div>
-                    )}
-                    <div className="px-6 md:px-8 py-4 bg-white border-b border-slate-100 flex flex-wrap gap-3">
-                        <button onClick={() => onPrint('pdf')} className="px-4 py-2.5 text-sm font-bold bg-white text-rose-600 border border-rose-100 rounded-xl hover:bg-rose-50"><i className="fas fa-file-pdf mr-2"></i> PDF</button>
-                        <button onClick={() => onPrint('print')} className="px-4 py-2.5 text-sm font-bold bg-indigo-600 text-white rounded-xl"><i className="fas fa-print mr-2"></i> Cetak</button>
-                        <button onClick={hExp} className="px-4 py-2.5 text-sm font-bold bg-white text-emerald-600 border border-emerald-100 rounded-xl"><i className="fas fa-file-excel mr-2"></i> Export XLS</button>
-                        <button onClick={hDownloadTemplate} className="px-4 py-2.5 text-sm font-bold bg-white text-indigo-600 border border-indigo-100 rounded-xl hover:bg-indigo-50"><i className="fas fa-file-download mr-2"></i> Template</button>
-                        <label className="px-4 py-2.5 text-sm font-bold bg-white text-teal-600 border border-teal-100 rounded-xl cursor-pointer mb-0"><i className="fas fa-upload mr-2"></i> Import<input type="file" accept=".xlsx, .xls" onChange={hImp} className="hidden" /></label>
-                        {/* INI ADALAH TOMBOL YANG BARU */}
-    <button onClick={hNK} disabled={isProsesNK} className="px-4 py-2.5 text-sm font-bold bg-amber-50 text-amber-600 rounded-xl ml-auto disabled:opacity-50 disabled:cursor-not-allowed">
-        <i className={`fas ${isProsesNK ? 'fa-spinner fa-spin' : 'fa-arrow-up'} mr-2`}></i> 
-        {isProsesNK ? 'Memproses...' : 'Naik Kelas'}
-    </button>
-                        <button onClick={() => { setF(iF); setEId(null); setIo(true); }} className="btn-primary py-2.5 px-5"><i className="fas fa-plus mr-2"></i> Tambah</button>
-                    </div>
-                    <div className="overflow-x-auto w-full p-4">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-indigo-50/50 text-indigo-600 font-bold uppercase text-[11px] rounded-xl">
-                                <tr>
-                                    <th className="py-4 px-6 rounded-l-2xl">Identitas</th>
-                                    <th className="py-4 px-6">Kategori</th>
-                                    <th className="py-4 px-6">Info</th>
-                                    <th className="py-4 px-6">Status</th>
-                                    {sDM && <th className="py-4 px-6 text-right rounded-r-2xl">Aksi</th>}
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {fD.length === 0 ? <tr><td colSpan={sDM ? "5" : "4"} className="py-12 text-center text-slate-400 font-bold">Data kosong.</td></tr> : fD.map(i => (
-                                    <tr key={i.id} className="hover:bg-slate-50/80 group">
-                                        <td className="py-4 px-6">
-                                            <p className="font-black text-slate-800 cursor-pointer hover:text-indigo-600" onClick={() => { setF({ ...iF, ...i }); setEId(i.id); setIo(true); }}>
-                                                {i.nama} {i.jenisKelamin && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">{i.jenisKelamin}</span>}
-                                            </p>
-                                            <p className="text-[10px] text-slate-500 font-mono mt-0.5">{i.nisn || '-'}</p>
-                                        </td>
-                                        <td className="py-4 px-6">
-                                            <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase ${i.kategori === 'Siswa' ? 'bg-blue-50 text-blue-600' : (i.kategori === 'Kepala Sekolah' ? 'bg-purple-50 text-purple-600' : 'bg-emerald-50 text-emerald-600')}`}>{i.kategori}</span>
-                                        </td>
-                                        <td className="py-4 px-6 text-slate-500 font-semibold">
-                                            {i.kategori === 'Siswa' ? <div><span className="text-slate-700">{formatKelasSiswa(i, dJ)}</span><br /><span className="text-[10px]">TP: {i.tahunPelajaran}</span></div> : '-'}
-                                            {i.telepon && <div className="mt-2"><a href={`https://wa.me/${formatWA(i.telepon)}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[10px] font-bold"><i className="fab fa-whatsapp"></i> WA</a></div>}
-                                        </td>
-                                        <td className="py-4 px-6">
-                                            <span className={`px-3 py-1.5 rounded-lg text-xs font-bold ${i.status === 'Aktif' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>{i.status}</span>
-                                        </td>
-                                        {sDM && (
-                                            <td className="py-4 px-6 flex justify-end gap-2">
-                                                <button onClick={() => onDelete(i.id)} className="text-red-500 bg-red-50 w-9 h-9 rounded-xl flex items-center justify-center"><i className="fas fa-trash"></i></button>
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                    {io && (
-                        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[999] flex items-center justify-center p-4 sm:p-6">
-                            <div className="bg-white rounded-[2rem] flex flex-col relative shadow-2xl animate-[bounceIn_0.3s_ease-out] w-full" style={{ maxWidth: '1100px', maxHeight: '95vh' }}>
-                                <div className="flex justify-between items-center p-6 border-b border-slate-100 shrink-0">
-                                    <h3 className="text-2xl font-black">{eId ? 'Edit' : 'Tambah'} Anggota</h3>
-                                    <button onClick={() => setIo(false)} className="w-10 h-10 bg-slate-50 rounded-full flex justify-center items-center hover:bg-rose-100 hover:text-rose-600 transition-colors"><i className="fas fa-times text-slate-500 hover:text-rose-600"></i></button>
-                                </div>
-                                <form onSubmit={hS} className="p-6 md:p-8 overflow-y-auto flex-1 custom-scrollbar">
-                                    <div className="flex flex-col lg:flex-row gap-8">
-                                        {/* --- AREA KIRI: UI FOTO --- */}
-                                        <div className="w-full lg:w-1/4 shrink-0 flex flex-col gap-2">
-                                            <div className="w-full aspect-[3/4] bg-slate-50 rounded-2xl border-2 border-dashed relative overflow-hidden flex flex-col items-center justify-center group hover:bg-slate-100 transition-colors">
-                                                {f.foto ? (
-                                                    <>
-                                                        <img src={f.foto} className="w-full h-full object-cover" alt="Foto" />
-                                                        <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                                                            <label className="w-10 h-10 bg-white text-indigo-600 rounded-full flex items-center justify-center cursor-pointer hover:scale-110 shadow-lg" title="Ganti Foto">
-                                                                <i className="fas fa-camera"></i>
-                                                                <input type="file" accept="image/*" capture="environment" onChange={hC} className="hidden" />
-                                                            </label>
-                                                            <button type="button" onClick={() => setF({...f, foto: ''})} className="w-10 h-10 bg-white text-rose-600 rounded-full flex items-center justify-center hover:scale-110 shadow-lg" title="Hapus Foto"><i className="fas fa-trash"></i></button>
-                                                        </div>
-                                                    </>
-                                                ) : (
-                                                    <div className="text-center p-4">
-                                                        <i className="fas fa-user-circle text-5xl mb-3 text-slate-300 drop-shadow-sm"></i>
-                                                        <p className="text-sm font-bold text-slate-500 mb-5">Tambahkan Foto</p>
-                                                        <label className="w-full py-2.5 px-4 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all shadow-sm cursor-pointer block">
-                                                            <i className="fas fa-camera mr-2"></i>Pilih / Jepret Foto
-                                                            <input type="file" accept="image/*" capture="environment" onChange={hC} className="hidden" />
-                                                        </label>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <p className="text-[10px] text-center text-slate-400 font-medium leading-relaxed">Buka di HP untuk memotret langsung.<br/>Format JPG/PNG (Maks 500KB).</p>
-                                        </div>
-                                        
-                                        {/* --- AREA KANAN: INPUT DATA --- */}
-                                        <div className="w-full lg:w-3/4 grid grid-cols-1 md:grid-cols-12 gap-x-5 gap-y-4 content-start">
-                                            <div className="md:col-span-4"><Input label="NISN/NIP" value={f.nisn} onChange={e => setF({ ...f, nisn: e.target.value })} required={true} /></div>
-                                            <div className="md:col-span-8">
-                                                <Input 
-                                                    label="Nama Lengkap" 
-                                                    value={f.nama} 
-                                                    onChange={e => setF({ ...f, nama: e.target.value })} 
-                                                    onBlur={e => setF({ ...f, nama: formatNamaGelarPintar(e.target.value) })} 
-                                                    required={true} 
-                                                    />
-                                                    </div>
-                                            
-                                            <div className="md:col-span-4"><Input label="Tempat Lahir" value={f.tempatLahir} onChange={e => setF({ ...f, tempatLahir: e.target.value })} /></div>
-                                            <div className="md:col-span-3"><Input label="Tanggal Lahir" type="date" value={f.tanggalLahir} onChange={e => setF({ ...f, tanggalLahir: e.target.value })} /></div>
-                                            <div className="md:col-span-2">
-                                                <label className="block text-xs font-bold text-slate-600 mb-1.5">L/P</label>
-                                                <select className="input-field py-2.5 text-sm cursor-pointer" value={f.jenisKelamin} onChange={e => setF({ ...f, jenisKelamin: e.target.value })}><option value="L">Laki-laki</option><option value="P">Perempuan</option></select>
-                                            </div>
-                                            <div className="md:col-span-3"><Input label="No. WA" type="tel" value={f.telepon} onChange={e => setF({ ...f, telepon: e.target.value })} /></div>
-                                            
-                                            <div className="md:col-span-12"><Input label="Alamat Lengkap" value={f.alamat} onChange={e => setF({ ...f, alamat: e.target.value })} /></div>
-                                            
-                                            <div className="md:col-span-12 border-t border-slate-100 pt-4 grid grid-cols-1 md:grid-cols-12 gap-x-5 gap-y-4">
-                                                <div className="md:col-span-3">
-                                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">Kategori</label>
-                                                    <select className="input-field py-2.5 text-sm cursor-pointer" value={f.kategori} onChange={e => setF({ ...f, kategori: e.target.value })}>
-                                                        <option value="Siswa">Siswa</option>
-                                                        <option value="Guru">Guru</option>
-                                                        <option value="Karyawan">Karyawan</option>
-                                                        <option value="Kepala Sekolah">Kepala Sekolah</option>
-                                                    </select>
-                                                </div>
-                                                {f.kategori === 'Siswa' ? (
-                                                    <>
-                                                        <div className="md:col-span-6">
-                                                            <label className="block text-xs font-bold text-slate-600 mb-1.5">Jurusan</label>
-                                                            <select className="input-field py-2.5 text-sm cursor-pointer" value={f.jurusan} onChange={e => setF({ ...f, jurusan: e.target.value, kelasJurusan: getSingkatanJurusan(e.target.value, dJ) })}><option value="">Pilih Jurusan</option>{dJ.map((j, i) => <option key={i} value={j.nama}>{j.nama}</option>)}</select>
-                                                        </div>
-                                                        <div className="md:col-span-3"><Input label="Tahun Ajaran" value={f.tahunPelajaran} onChange={e => setF({ ...f, tahunPelajaran: e.target.value })} required={true} /></div>
-                                                    </>
-                                                ) : <div className="md:col-span-9"></div>}
-                                            </div>
-
-                                            <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-x-5 gap-y-4 mb-2">
-                                                {f.kategori === 'Siswa' ? (
-                                                    <>
-                                                        <div className="md:col-span-2"><label className="text-xs font-bold text-slate-600 block mb-1.5">Kelas</label><select className="input-field py-2.5 text-sm cursor-pointer" value={f.kelas} onChange={e => setF({ ...f, kelas: e.target.value })}><option value="X">X</option><option value="XI">XI</option><option value="XII">XII</option></select></div>
-                                                        <div className="md:col-span-3"><label className="text-xs font-bold text-slate-600 block mb-1.5">Singkatan</label><input type="text" className="input-field py-2.5 text-sm bg-slate-100" value={f.kelasJurusan || getSingkatanJurusan(f.jurusan, dJ)} readOnly /></div>
-                                                        <div className="md:col-span-2"><label className="text-xs font-bold text-slate-600 block mb-1.5">No</label><select className="input-field py-2.5 text-sm cursor-pointer" value={f.noKelas} onChange={e => setF({ ...f, noKelas: e.target.value })}><option value="">-</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
-                                                    </>
-                                                ) : <div className="md:col-span-7"></div>}
-                                                
-                                                <div className="md:col-span-5 md:col-start-8">
-                                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">Status Aktif</label>
-                                                    <select className="input-field py-2.5 text-sm border-indigo-200 bg-indigo-50 text-indigo-700 font-bold cursor-pointer" value={f.status} onChange={e => setF({ ...f, status: e.target.value })}><option value="Aktif">Aktif</option><option value="Arsip">Arsip</option></select>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-end gap-3 mt-4 pt-5 border-t border-slate-100 shrink-0">
-                                        <button type="button" onClick={() => setIo(false)} className="btn-secondary px-6">Batal</button>
-                                        <button type="submit" className="btn-primary px-8"><i className="fas fa-save mr-2"></i>Simpan Data</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    )}
-
-                </div>
-            );
+                });
+                
+                if(c > 0) { showAlert('Sukses', `Berhasil memproses import ${c} anggota!`, 'success'); } 
+                else { showAlert('Peringatan', 'Gagal import! Pastikan file Excel memiliki kolom bernama "Nama Lengkap" atau "Nama".', 'warning'); }
+            } catch (err) { 
+                showAlert('Gagal', 'Format file Excel tidak sesuai atau rusak.', 'error'); 
+                console.error(err); 
+            }
+            e.target.value = null;
         };
+        r.readAsArrayBuffer(l);
+    };
+
+    return (
+        <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden flex flex-col min-h-[80vh]">
+            <div className="p-6 md:p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
+                <h2 className="text-2xl font-black text-slate-800">Data Anggota</h2>
+                <div className="relative w-full md:w-80">
+                    <i className="fas fa-search absolute left-5 top-3 text-indigo-400 text-lg"></i>
+                    <input 
+                        type="text" 
+                        autoFocus={true} 
+                        placeholder="Cari Nama/NISN..." 
+                        className="input-field pl-12 py-2.5 text-sm" 
+                        value={filter || ''} 
+                        onChange={e => { 
+                            setFilter(e.target.value); 
+                            setCurrentPage(1); // Reset halaman saat mencari
+                        }} 
+                    />
+                </div>
+            </div>
+            
+            <div className="bg-slate-50/50 p-6 md:px-8 border-b border-slate-100 flex flex-col gap-5 shrink-0">
+                <div className="flex flex-wrap gap-3">
+                    <div className="bg-indigo-50 border border-indigo-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-indigo-500 uppercase">Aktif</p><h4 className="text-2xl font-black text-indigo-700 leading-none">{rkp.t}</h4></div>
+                    <div className="bg-blue-50 border border-blue-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-blue-500 uppercase">Siswa</p><h4 className="text-2xl font-black text-blue-700 leading-none">{rkp.s}</h4></div>
+                    <div className="bg-emerald-50 border border-emerald-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-emerald-500 uppercase">Guru</p><h4 className="text-2xl font-black text-emerald-700 leading-none">{rkp.g}</h4></div>
+                    <div className="bg-amber-50 border border-amber-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-amber-500 uppercase">Karyawan</p><h4 className="text-2xl font-black text-amber-700 leading-none">{rkp.k}</h4></div>
+                    <div className="bg-purple-50 border border-purple-100 px-5 py-3 rounded-2xl shadow-sm"><p className="text-[10px] font-bold text-purple-500 uppercase">Kepsek</p><h4 className="text-2xl font-black text-purple-700 leading-none">{rkp.ks}</h4></div>
+                </div>
+                
+                <div className="flex flex-wrap gap-3 items-center">
+                    <span className="text-xs font-bold text-slate-500 uppercase mr-1"><i className="fas fa-filter mr-1"></i> Filter:</span>
+                    <select className="input-field py-2 text-sm w-auto cursor-pointer" value={fKat} onChange={e => { setFKat(e.target.value); setFKls('Semua'); setFJur('Semua'); setFThn('Semua'); setCurrentPage(1); }}>
+                        <option value="Semua">Semua Kategori</option>
+                        <option value="Siswa">Siswa</option>
+                        <option value="Guru">Guru</option>
+                        <option value="Karyawan">Karyawan</option>
+                        <option value="Kepala Sekolah">Kepala Sekolah</option>
+                    </select>
+                    {fKat === 'Siswa' && (
+                        <>
+                            <select className="input-field py-2 text-sm w-auto cursor-pointer max-w-[140px]" value={fKls} onChange={e => { setFKls(e.target.value); setCurrentPage(1); }}><option value="Semua">Semua Kelas</option>{uKlsLengkap.map(k => <option key={k} value={k}>{k}</option>)}</select>
+                            <select className="input-field py-2 text-sm w-auto cursor-pointer max-w-[140px]" value={fJur} onChange={e => { setFJur(e.target.value); setCurrentPage(1); }}><option value="Semua">Semua Jurusan</option>{uJurusan.map(j => <option key={j} value={j}>{j}</option>)}</select>
+                            <select className="input-field py-2 text-sm w-auto cursor-pointer max-w-[140px]" value={fThn} onChange={e => { setFThn(e.target.value); setCurrentPage(1); }}><option value="Semua">Semua Thn</option>{uThn.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {sDM && (
+                <div className="mx-6 md:mx-8 mt-6 bg-rose-50/50 rounded-2xl p-5 border border-rose-200 shadow-lg flex justify-between items-end gap-4 shrink-0">
+                    <div className="flex-1">
+                        <h4 className="text-rose-700 font-black mb-1">Hapus Massal (Ctrl+Q)</h4>
+                        <div className="flex gap-3">
+                            <select className="input-field border-rose-200 py-2 text-sm" value={dT} onChange={e => { setDT(e.target.value); setDV(''); }}>
+                                <option value="all">Seluruh Siswa</option><option value="kelas">Per Kelas</option><option value="jurusan">Per Jurusan</option><option value="tahun">Per Tahun</option>
+                            </select>
+                            {dT === 'kelas' && <select className="input-field border-rose-200 py-2 text-sm" value={dV} onChange={e => setDV(e.target.value)}><option value="">Pilih Kelas</option><option value="X">X</option><option value="XI">XI</option><option value="XII">XII</option></select>}
+                            {dT === 'jurusan' && <select className="input-field border-rose-200 py-2 text-sm" value={dV} onChange={e => setDV(e.target.value)}><option value="">Pilih Jurusan</option>{dJ.map((j, i) => <option key={i} value={j.nama}>{j.nama}</option>)}</select>}
+                            {dT === 'tahun' && <input type="text" className="input-field border-rose-200 py-2 text-sm" placeholder="Contoh: 2025/2026" value={dV} onChange={e => setDV(e.target.value)} />}
+                        </div>
+                    </div>
+                    <button onClick={hMD} className="bg-rose-600 text-white px-6 py-2.5 rounded-xl font-bold">Hapus</button>
+                </div>
+            )}
+
+            <div className="px-6 md:px-8 py-4 bg-white border-b border-slate-100 flex flex-wrap gap-3 shrink-0">
+                <button onClick={() => onPrint('pdf')} className="px-4 py-2.5 text-sm font-bold bg-white text-rose-600 border border-rose-100 rounded-xl hover:bg-rose-50"><i className="fas fa-file-pdf mr-2"></i> PDF</button>
+                <button onClick={() => onPrint('print')} className="px-4 py-2.5 text-sm font-bold bg-indigo-600 text-white rounded-xl"><i className="fas fa-print mr-2"></i> Cetak</button>
+                <button onClick={hExp} className="px-4 py-2.5 text-sm font-bold bg-white text-emerald-600 border border-emerald-100 rounded-xl"><i className="fas fa-file-excel mr-2"></i> Export XLS</button>
+                <button onClick={hDownloadTemplate} className="px-4 py-2.5 text-sm font-bold bg-white text-indigo-600 border border-indigo-100 rounded-xl hover:bg-indigo-50"><i className="fas fa-file-download mr-2"></i> Template</button>
+                <label className="px-4 py-2.5 text-sm font-bold bg-white text-teal-600 border border-teal-100 rounded-xl cursor-pointer mb-0"><i className="fas fa-upload mr-2"></i> Import<input type="file" accept=".xlsx, .xls" onChange={hImp} className="hidden" /></label>
+                
+                <button onClick={hNK} disabled={isProsesNK} className="px-4 py-2.5 text-sm font-bold bg-amber-50 text-amber-600 rounded-xl ml-auto disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i className={`fas ${isProsesNK ? 'fa-spinner fa-spin' : 'fa-arrow-up'} mr-2`}></i> 
+                    {isProsesNK ? 'Memproses...' : 'Naik Kelas'}
+                </button>
+                <button onClick={() => { setF(iF); setEId(null); setIo(true); }} className="btn-primary py-2.5 px-5"><i className="fas fa-plus mr-2"></i> Tambah</button>
+            </div>
+
+            <div className="overflow-x-auto w-full p-4 flex-1">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-indigo-50/50 text-indigo-600 font-bold uppercase text-[11px] rounded-xl">
+                        <tr>
+                            <th className="py-4 px-6 rounded-l-2xl">Identitas</th>
+                            <th className="py-4 px-6">Kategori</th>
+                            <th className="py-4 px-6">Info</th>
+                            <th className="py-4 px-6">Status</th>
+                            {sDM && <th className="py-4 px-6 text-right rounded-r-2xl">Aksi</th>}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                        {currentData.length === 0 ? <tr><td colSpan={sDM ? "5" : "4"} className="py-12 text-center text-slate-400 font-bold">Data kosong atau tidak ditemukan.</td></tr> : currentData.map(i => (
+                            <tr key={i.id} className="hover:bg-slate-50/80 group">
+                                <td className="py-4 px-6">
+                                    <p className="font-black text-slate-800 cursor-pointer hover:text-indigo-600" onClick={() => { setF({ ...iF, ...i }); setEId(i.id); setIo(true); }}>
+                                        {i.nama} {i.jenisKelamin && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 ml-1">{i.jenisKelamin}</span>}
+                                    </p>
+                                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">{i.nisn || '-'}</p>
+                                </td>
+                                <td className="py-4 px-6">
+                                    <span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase ${i.kategori === 'Siswa' ? 'bg-blue-50 text-blue-600' : (i.kategori === 'Kepala Sekolah' ? 'bg-purple-50 text-purple-600' : 'bg-emerald-50 text-emerald-600')}`}>{i.kategori}</span>
+                                </td>
+                                <td className="py-4 px-6 text-slate-500 font-semibold">
+                                    {i.kategori === 'Siswa' ? <div><span className="text-slate-700">{formatKelasSiswa(i, dJ)}</span><br /><span className="text-[10px]">TP: {i.tahunPelajaran}</span></div> : '-'}
+                                    {i.telepon && <div className="mt-2"><a href={`https://wa.me/${formatWA(i.telepon)}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[10px] font-bold inline-block"><i className="fab fa-whatsapp"></i> WA</a></div>}
+                                </td>
+                                <td className="py-4 px-6">
+                                    <span className={`px-3 py-1.5 rounded-lg text-xs font-bold ${i.status === 'Aktif' ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>{i.status}</span>
+                                </td>
+                                {sDM && (
+                                    <td className="py-4 px-6 flex justify-end gap-2">
+                                        <button onClick={() => onDelete(i.id)} className="text-red-500 bg-red-50 w-9 h-9 rounded-xl flex items-center justify-center"><i className="fas fa-trash"></i></button>
+                                    </td>
+                                )}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* KONTROL PAGINATION DI BAGIAN BAWAH */}
+            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 rounded-b-[2rem]">
+                <div className="text-xs font-bold text-slate-500">
+                    Menampilkan <span className="text-indigo-600 px-1">{fD.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}</span> 
+                    - <span className="text-indigo-600 px-1">{Math.min(currentPage * itemsPerPage, fD.length)}</span> 
+                    dari <span className="text-indigo-600 px-1">{fD.length}</span> Anggota
+                </div>
+                <div className="flex items-center gap-3">
+                    <button 
+                        disabled={currentPage === 1} 
+                        onClick={() => setCurrentPage(currentPage - 1)} 
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                    >
+                        <i className="fas fa-chevron-left text-sm"></i>
+                    </button>
+                    <span className="font-black text-sm text-slate-700 mx-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-100">
+                        Hal {currentPage} <span className="text-slate-400 font-medium mx-1">/</span> {totalPages}
+                    </span>
+                    <button 
+                        disabled={currentPage === totalPages} 
+                        onClick={() => setCurrentPage(currentPage + 1)} 
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                    >
+                        <i className="fas fa-chevron-right text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            {/* --- MODAL FORM TAMBAH/EDIT ANGGOTA --- */}
+            {io && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[999] flex items-center justify-center p-4 sm:p-6">
+                    <div className="bg-white rounded-[2rem] flex flex-col relative shadow-2xl animate-[bounceIn_0.3s_ease-out] w-full" style={{ maxWidth: '1100px', maxHeight: '95vh' }}>
+                        <div className="flex justify-between items-center p-6 border-b border-slate-100 shrink-0">
+                            <h3 className="text-2xl font-black">{eId ? 'Edit' : 'Tambah'} Anggota</h3>
+                            <button onClick={() => setIo(false)} className="w-10 h-10 bg-slate-50 rounded-full flex justify-center items-center hover:bg-rose-100 hover:text-rose-600 transition-colors"><i className="fas fa-times text-slate-500 hover:text-rose-600"></i></button>
+                        </div>
+                        <form onSubmit={hS} className="p-6 md:p-8 overflow-y-auto flex-1 custom-scrollbar">
+                            <div className="flex flex-col lg:flex-row gap-8">
+                                {/* --- AREA KIRI: UI FOTO --- */}
+                                <div className="w-full lg:w-1/4 shrink-0 flex flex-col gap-2">
+                                    <div className="w-full aspect-[3/4] bg-slate-50 rounded-2xl border-2 border-dashed relative overflow-hidden flex flex-col items-center justify-center group hover:bg-slate-100 transition-colors">
+                                        {f.foto ? (
+                                            <>
+                                                <img src={f.foto} className="w-full h-full object-cover" alt="Foto" />
+                                                <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                                    <label className="w-10 h-10 bg-white text-indigo-600 rounded-full flex items-center justify-center cursor-pointer hover:scale-110 shadow-lg" title="Ganti Foto">
+                                                        <i className="fas fa-camera"></i>
+                                                        <input type="file" accept="image/*" capture="environment" onChange={hC} className="hidden" />
+                                                    </label>
+                                                    <button type="button" onClick={() => setF({...f, foto: ''})} className="w-10 h-10 bg-white text-rose-600 rounded-full flex items-center justify-center hover:scale-110 shadow-lg" title="Hapus Foto"><i className="fas fa-trash"></i></button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="text-center p-4">
+                                                <i className="fas fa-user-circle text-5xl mb-3 text-slate-300 drop-shadow-sm"></i>
+                                                <p className="text-sm font-bold text-slate-500 mb-5">Tambahkan Foto</p>
+                                                <label className="w-full py-2.5 px-4 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all shadow-sm cursor-pointer block">
+                                                    <i className="fas fa-camera mr-2"></i>Pilih / Jepret Foto
+                                                    <input type="file" accept="image/*" capture="environment" onChange={hC} className="hidden" />
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p className="text-[10px] text-center text-slate-400 font-medium leading-relaxed">Buka di HP untuk memotret langsung.<br/>Format JPG/PNG (Maks 500KB).</p>
+                                </div>
+                                
+                                {/* --- AREA KANAN: INPUT DATA --- */}
+                                <div className="w-full lg:w-3/4 grid grid-cols-1 md:grid-cols-12 gap-x-5 gap-y-4 content-start">
+                                    <div className="md:col-span-4"><Input label="NISN/NIP" value={f.nisn} onChange={e => setF({ ...f, nisn: e.target.value })} required={true} /></div>
+                                    <div className="md:col-span-8">
+                                        <Input 
+                                            label="Nama Lengkap" 
+                                            value={f.nama} 
+                                            onChange={e => setF({ ...f, nama: e.target.value })} 
+                                            onBlur={e => setF({ ...f, nama: formatNamaGelarPintar(e.target.value) })} 
+                                            required={true} 
+                                            />
+                                            </div>
+                                    
+                                    <div className="md:col-span-4"><Input label="Tempat Lahir" value={f.tempatLahir} onChange={e => setF({ ...f, tempatLahir: e.target.value })} /></div>
+                                    <div className="md:col-span-3"><Input label="Tanggal Lahir" type="date" value={f.tanggalLahir} onChange={e => setF({ ...f, tanggalLahir: e.target.value })} /></div>
+                                    <div className="md:col-span-2">
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5">L/P</label>
+                                        <select className="input-field py-2.5 text-sm cursor-pointer" value={f.jenisKelamin} onChange={e => setF({ ...f, jenisKelamin: e.target.value })}><option value="L">Laki-laki</option><option value="P">Perempuan</option></select>
+                                    </div>
+                                    <div className="md:col-span-3"><Input label="No. WA" type="tel" value={f.telepon} onChange={e => setF({ ...f, telepon: e.target.value })} /></div>
+                                    
+                                    <div className="md:col-span-12"><Input label="Alamat Lengkap" value={f.alamat} onChange={e => setF({ ...f, alamat: e.target.value })} /></div>
+                                    
+                                    <div className="md:col-span-12 border-t border-slate-100 pt-4 grid grid-cols-1 md:grid-cols-12 gap-x-5 gap-y-4">
+                                        <div className="md:col-span-3">
+                                            <label className="block text-xs font-bold text-slate-600 mb-1.5">Kategori</label>
+                                            <select className="input-field py-2.5 text-sm cursor-pointer" value={f.kategori} onChange={e => setF({ ...f, kategori: e.target.value })}>
+                                                <option value="Siswa">Siswa</option>
+                                                <option value="Guru">Guru</option>
+                                                <option value="Karyawan">Karyawan</option>
+                                                <option value="Kepala Sekolah">Kepala Sekolah</option>
+                                            </select>
+                                        </div>
+                                        {f.kategori === 'Siswa' ? (
+                                            <>
+                                                <div className="md:col-span-6">
+                                                    <label className="block text-xs font-bold text-slate-600 mb-1.5">Jurusan</label>
+                                                    <select className="input-field py-2.5 text-sm cursor-pointer" value={f.jurusan} onChange={e => setF({ ...f, jurusan: e.target.value, kelasJurusan: getSingkatanJurusan(e.target.value, dJ) })}><option value="">Pilih Jurusan</option>{dJ.map((j, i) => <option key={i} value={j.nama}>{j.nama}</option>)}</select>
+                                                </div>
+                                                <div className="md:col-span-3"><Input label="Tahun Ajaran" value={f.tahunPelajaran} onChange={e => setF({ ...f, tahunPelajaran: e.target.value })} required={true} /></div>
+                                            </>
+                                        ) : <div className="md:col-span-9"></div>}
+                                    </div>
+
+                                    <div className="md:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-x-5 gap-y-4 mb-2">
+                                        {f.kategori === 'Siswa' ? (
+                                            <>
+                                                <div className="md:col-span-2"><label className="text-xs font-bold text-slate-600 block mb-1.5">Kelas</label><select className="input-field py-2.5 text-sm cursor-pointer" value={f.kelas} onChange={e => setF({ ...f, kelas: e.target.value })}><option value="X">X</option><option value="XI">XI</option><option value="XII">XII</option></select></div>
+                                                <div className="md:col-span-3"><label className="text-xs font-bold text-slate-600 block mb-1.5">Singkatan</label><input type="text" className="input-field py-2.5 text-sm bg-slate-100" value={f.kelasJurusan || getSingkatanJurusan(f.jurusan, dJ)} readOnly /></div>
+                                                <div className="md:col-span-2"><label className="text-xs font-bold text-slate-600 block mb-1.5">No</label><select className="input-field py-2.5 text-sm cursor-pointer" value={f.noKelas} onChange={e => setF({ ...f, noKelas: e.target.value })}><option value="">-</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+                                            </>
+                                        ) : <div className="md:col-span-7"></div>}
+                                        
+                                        <div className="md:col-span-5 md:col-start-8">
+                                            <label className="block text-xs font-bold text-slate-600 mb-1.5">Status Aktif</label>
+                                            <select className="input-field py-2.5 text-sm border-indigo-200 bg-indigo-50 text-indigo-700 font-bold cursor-pointer" value={f.status} onChange={e => setF({ ...f, status: e.target.value })}><option value="Aktif">Aktif</option><option value="Arsip">Arsip</option></select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-3 mt-4 pt-5 border-t border-slate-100 shrink-0">
+                                <button type="button" onClick={() => setIo(false)} className="btn-secondary px-6">Batal</button>
+                                <button type="submit" className="btn-primary px-8"><i className="fas fa-save mr-2"></i>Simpan Data</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert }) => {
     const iF = { judul: '', anakJudul: '', pengarang: '', penerbit: '', kotaTerbit: '', tahun: '', deskripsiFisik: '', isbn: '', subjek: '', klasifikasiDDC: '000 - Komputer, Informasi, dan Karya Umum', kodeLabel: '', sinopsis: '', cover: '', noInduk: '', lokasiRak: '', sumberPerolehan: 'BOSP', stock: 1, stockAwal: 1, tglMasuk: new Date().toISOString().split('T')[0] };
@@ -2344,23 +2407,15 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
     const [io, setIo] = useState(false), [eId, setEId] = useState(null), [f, setF] = useState(''), [fm, setFm] = useState(iF), [aT, setAT] = useState('metadata');
     const [rM, setRM] = useState({ is: false, b: null, alasan: '', tgl: new Date().toISOString().split('T')[0] });
 
-    // FUNGSI PINTAR DIPERBAIKI (Mencegah Database Membaca Data Lama yang Salah)
+    // STATE BARU UNTUK PAGINATION (PAGINASI)
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 25; // Jumlah buku yang tampil per halaman
+
     const getTrueStockAwal = (b) => {
-        // 1. Hitung jumlah buku ini yang sedang dipinjam saat ini
         const activeLoansCount = peminjaman.filter(p => p.idBuku === b.id && p.status === 'Dipinjam').length;
-        
-        // 2. Hitung total fisik Murni = Sisa di rak + Yang dipinjam
         const minimumFisik = (parseInt(b.stock) || 0) + activeLoansCount;
-        
-        // 3. Cek data stok awal yang tersimpan di database
         const savedAwal = parseInt(b.stockAwal);
-        
-        // 4. LOGIKA KUNCI: Jika di database stok awalnya LEBIH KECIL dari total fisik murni 
-        // (contoh: di DB 189, padahal total fisiknya 514), maka PAKSA gunakan total fisik murni!
-        if (!isNaN(savedAwal) && savedAwal >= minimumFisik) {
-            return savedAwal;
-        }
-        
+        if (!isNaN(savedAwal) && savedAwal >= minimumFisik) return savedAwal;
         return minimumFisik;
     };
 
@@ -2448,20 +2503,34 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
         r.readAsArrayBuffer(l);
     };
 
+    // Filter Seluruh Data
     const fD = data.filter(i => {
         if (i.status === 'Direduksi') return false;
         const fl = f.toLowerCase(), bf = fl.replace(/-\d+$/, '');
         return i.judul.toLowerCase().includes(fl) || (i.isbn && i.isbn.toLowerCase().includes(bf)) || (i.noInduk && i.noInduk.toLowerCase().includes(bf)) || (i.pengarang && i.pengarang.toLowerCase().includes(fl));
     });
 
+    // LOGIKA PAGINATION
+    const totalPages = Math.ceil(fD.length / itemsPerPage) || 1;
+    const currentData = fD.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
     return (
-        <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden">
-            <div className="p-6 md:p-8 border-b flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+        <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden flex flex-col min-h-[80vh]">
+            <div className="p-6 md:p-8 border-b flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 shrink-0">
                 <div className="flex items-center gap-4 w-full xl:w-auto">
                     <h2 className="text-2xl font-black shrink-0">Daftar Buku</h2>
                     <div className="relative w-full md:w-80">
                         <i className="fas fa-barcode absolute left-5 top-3 text-indigo-400"></i>
-                        <input type="text" placeholder="Scan/Cari..." className="input-field pl-12 py-2.5 text-sm" value={f} onChange={e => setF(e.target.value)} />
+                        <input 
+                            type="text" 
+                            placeholder="Scan/Cari..." 
+                            className="input-field pl-12 py-2.5 text-sm" 
+                            value={f} 
+                            onChange={e => { 
+                                setF(e.target.value); 
+                                setCurrentPage(1); // Reset ke halaman 1 saat mencari
+                            }} 
+                        />
                     </div>
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -2470,7 +2539,8 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
                     <button onClick={() => { setFm(iF); setEId(null); setIo(true); setAT('metadata'); }} className="btn-primary"><i className="fas fa-plus mr-2"></i> Tambah</button>
                 </div>
             </div>
-            <div className="overflow-x-auto p-4">
+            
+            <div className="overflow-x-auto p-4 flex-1">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-indigo-50/50 text-indigo-600 font-bold uppercase text-[11px] rounded-xl">
                         <tr>
@@ -2482,7 +2552,9 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                        {fD.map(i => (
+                        {currentData.length === 0 ? (
+                            <tr><td colSpan="5" className="text-center py-12 text-slate-400 font-bold">Buku tidak ditemukan.</td></tr>
+                        ) : currentData.map(i => (
                             <tr key={i.id} className="hover:bg-slate-50/80 group">
                                 <td className="py-4 px-6 font-mono text-xs">{i.noInduk}<br /><b>{i.isbn}</b></td>
                                 <td className="py-4 px-6">
@@ -2510,6 +2582,35 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
                     </tbody>
                 </table>
             </div>
+
+            {/* KONTROL PAGINATION DI BAGIAN BAWAH */}
+            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 rounded-b-[2rem]">
+                <div className="text-xs font-bold text-slate-500">
+                    Menampilkan <span className="text-indigo-600 px-1">{fD.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}</span> 
+                    - <span className="text-indigo-600 px-1">{Math.min(currentPage * itemsPerPage, fD.length)}</span> 
+                    dari <span className="text-indigo-600 px-1">{fD.length}</span> Total Buku
+                </div>
+                <div className="flex items-center gap-3">
+                    <button 
+                        disabled={currentPage === 1} 
+                        onClick={() => setCurrentPage(currentPage - 1)} 
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                    >
+                        <i className="fas fa-chevron-left text-sm"></i>
+                    </button>
+                    <span className="font-black text-sm text-slate-700 mx-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-100">
+                        Hal {currentPage} <span className="text-slate-400 font-medium mx-1">/</span> {totalPages}
+                    </span>
+                    <button 
+                        disabled={currentPage === totalPages} 
+                        onClick={() => setCurrentPage(currentPage + 1)} 
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                    >
+                        <i className="fas fa-chevron-right text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
             {io && (
                 <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
                     <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] flex flex-col relative shadow-2xl animate-[bounceIn_0.3s_ease-out]">
@@ -2586,7 +2687,6 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
                         </form>
                         <div className="p-6 border-t flex justify-end gap-3 bg-slate-50/50 rounded-b-[2rem]">
                             <button type="button" onClick={() => setIo(false)} className="btn-secondary">Batal</button>
-                            {/* Tombol Simpan Buku akan memicu validasi dan menyimpan nilai 514 */}
                             <button onClick={() => document.getElementById('bookForm').requestSubmit()} className="btn-primary">Simpan Buku</button>
                         </div>
                     </div>
@@ -2609,41 +2709,158 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
     );
 };
 
+const ReduksiView = ({ data, onUpdate, onDelete, onPrint, filter, setFilter }) => {
+            const [p, setP] = useState(1); const l = 10;
+            const rD = useMemo(() => data.filter(b => {
+                if (b.status !== 'Direduksi') return false;
+                if (!b.tglReduksi) return true;
+                let m = true;
+                if (filter.start) m = m && b.tglReduksi >= filter.start;
+                if (filter.end) m = m && b.tglReduksi <= filter.end;
+                return m;
+            }).sort((a, b) => (b.tglReduksi || '').localeCompare(a.tglReduksi || '')), [data, filter]);
+            
+            const tP = Math.ceil(rD.length / l) || 1; const pg = rD.slice((p - 1) * l, p * l);
+            
+            return (
+                <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden flex flex-col h-[80vh]">
+                    <div className="p-6 md:p-8 border-b flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 shrink-0">
+                        <div><h2 className="text-2xl font-black text-slate-800">Buku Direduksi (Weeding)</h2><p className="text-sm font-bold text-slate-500">Standar Penghapusan Koleksi Perpusnas</p></div>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <Input type="date" value={filter.start} onChange={e => { setFilter({ ...filter, start: e.target.value }); setP(1); }} className="w-auto" />
+                            <span className="font-bold text-slate-400">-</span>
+                            <Input type="date" value={filter.end} onChange={e => { setFilter({ ...filter, end: e.target.value }); setP(1); }} className="w-auto" />
+                            <button onClick={() => onPrint('reduksi')} className="btn-primary ml-2"><i className="fas fa-print mr-2"></i> Cetak Laporan</button>
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-x-auto p-4">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-rose-50/50 text-rose-600 font-bold uppercase text-[11px] rounded-xl">
+                                <tr>
+                                    <th className="py-4 px-6 rounded-l-2xl w-32">Tgl Reduksi</th>
+                                    <th className="py-4 px-6">Identitas Buku</th>
+                                    <th className="py-4 px-6">Alasan</th>
+                                    <th className="py-4 px-6 text-right rounded-r-2xl">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {pg.length === 0 ? <tr><td colSpan="4" className="text-center py-10 font-bold text-slate-400">Tidak ada data reduksi buku.</td></tr> : pg.map(i => (
+                                    <tr key={i.id} className="hover:bg-slate-50/50 group">
+                                        <td className="py-4 px-6 font-bold">{i.tglReduksi ? formatDate(i.tglReduksi) : '-'}</td>
+                                        <td className="py-4 px-6"><p className="font-black text-slate-800">{i.judul}</p>{i.anakJudul && <p className="text-[10px] italic text-slate-500">{i.anakJudul}</p>}<p className="text-xs text-slate-500 font-mono mt-1">{i.noInduk} | {i.isbn}</p></td>
+                                        <td className="py-4 px-6"><span className="bg-rose-100 text-rose-700 px-3 py-1.5 rounded-lg text-xs font-black">{i.alasanReduksi}</span></td>
+                                        <td className="py-4 px-6 flex justify-end gap-2 opacity-100 md:opacity-0 group-hover:opacity-100">
+                                            <button onClick={() => onUpdate(i.id, { status: 'Aktif', alasanReduksi: null, tglReduksi: null })} className="w-9 h-9 bg-emerald-50 text-emerald-500 rounded-xl hover:bg-emerald-500 hover:text-white" title="Kembalikan ke Katalog Aktif"><i className="fas fa-rotate-left"></i></button>
+                                            <button onClick={() => onDelete(i.id)} className="w-9 h-9 bg-slate-100 text-slate-500 rounded-xl hover:bg-slate-500 hover:text-white" title="Hapus Permanen dari Database"><i className="fas fa-trash"></i></button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="p-4 border-t flex justify-center items-center gap-4 shrink-0">
+                        <button disabled={p === 1} onClick={() => setP(p - 1)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600 disabled:opacity-50 hover:bg-indigo-100 hover:text-indigo-600 transition-colors"><i className="fas fa-chevron-left"></i></button>
+                        <span className="font-black text-sm text-slate-700">Halaman {p} dari {tP}</span>
+                        <button disabled={p === tP} onClick={() => setP(p + 1)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-600 disabled:opacity-50 hover:bg-indigo-100 hover:text-indigo-600 transition-colors"><i className="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            );
+        };
+
         const PencarianBukuView = ({ data }) => {
             const [s, setS] = useState(''), [sB, setSB] = useState(null);
+            
+            // STATE BARU UNTUK PAGINATION (PAGINASI)
+            const [currentPage, setCurrentPage] = useState(1);
+            const itemsPerPage = 24; // 24 pas untuk grid karena habis dibagi 2, 3, dan 4
+
             const f = data.filter(b => {
                 if (b.status === 'Direduksi') return false;
                 const sl = s.toLowerCase(), bs = sl.replace(/-\d+$/, '');
                 return b.judul.toLowerCase().includes(sl) || b.pengarang.toLowerCase().includes(sl) || (b.isbn && b.isbn.toLowerCase().includes(bs)) || (b.noInduk && b.noInduk.toLowerCase().includes(bs));
             });
+
+            // LOGIKA PAGINATION
+            const totalPages = Math.ceil(f.length / itemsPerPage) || 1;
+            const currentData = f.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
             return (
                 <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden min-h-[80vh] flex flex-col relative">
                     <div className="p-8 md:p-14 border-b bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-indigo-50 via-white to-white shrink-0">
                         <h2 className="text-4xl font-black text-indigo-950 mb-8 text-center tracking-tight">Katalog Online Terpadu</h2>
                         <div className="max-w-3xl mx-auto relative">
                             <i className="fas fa-barcode absolute left-6 top-6 text-indigo-500 text-xl"></i>
-                            <input type="text" autoFocus={true} placeholder="Scan Barcode / Cari ISBN, Judul..." className="w-full pl-16 pr-6 py-5 rounded-2xl border-2 border-indigo-50 shadow-lg text-lg focus:outline-none focus:ring-4 focus:ring-indigo-100" value={s} onChange={e => setS(e.target.value)} />
+                            <input 
+                                type="text" 
+                                autoFocus={true} 
+                                placeholder="Scan Barcode / Cari ISBN, Judul..." 
+                                className="w-full pl-16 pr-6 py-5 rounded-2xl border-2 border-indigo-50 shadow-lg text-lg focus:outline-none focus:ring-4 focus:ring-indigo-100" 
+                                value={s} 
+                                onChange={e => { 
+                                    setS(e.target.value); 
+                                    setCurrentPage(1); // Reset ke halaman 1 saat mengetik pencarian
+                                }} 
+                            />
                         </div>
                     </div>
+                    
                     <div className="p-6 md:p-10 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 bg-slate-50/50 flex-1 overflow-y-auto content-start">
-                        {f.map(i => (
-                            <div key={i.id} onClick={() => setSB(i)} className="border border-slate-200/60 rounded-[1.5rem] p-6 hover:shadow-xl hover:-translate-y-2 transition-all bg-white flex gap-5 cursor-pointer group">
-                                <div className="w-24 h-36 shrink-0 rounded-lg overflow-hidden bg-slate-100">{i.cover ? <img src={i.cover} className="w-full h-full object-cover" alt="Cover" /> : <i className="fas fa-book text-3xl text-slate-300 w-full h-full flex items-center justify-center"></i>}</div>
-                                <div className="flex flex-col flex-1">
-                                    <h3 className="font-black text-lg text-slate-800 line-clamp-2">{i.judul}</h3>
-                                    {i.anakJudul && <p className="text-[9px] italic text-slate-500 line-clamp-1">{i.anakJudul}</p>}
-                                    <p className="text-xs font-bold text-slate-500 mb-2 truncate">{i.pengarang}</p>
-                                    <div className="mt-1 mb-3">
-                                        <span className={`inline-block px-2 py-1 rounded border text-[9px] font-black uppercase ${i.stock > 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}><i className={`fas ${i.stock > 0 ? 'fa-check' : 'fa-times'} mr-1`}></i> {i.stock > 0 ? `Tersedia (${i.stock})` : 'Dipinjam'}</span>
-                                    </div>
-                                    <div className="mt-auto flex flex-col gap-1 text-[10px] font-bold text-slate-400 uppercase">
-                                        <p><i className="fas fa-map-pin w-3 text-indigo-400"></i> Rak: {i.lokasiRak || '-'}</p>
-                                        <p><i className="fas fa-bookmark w-3 text-indigo-400"></i> {i.klasifikasiDDC}</p>
+                        {currentData.length === 0 ? (
+                            <div className="col-span-full text-center py-12 text-slate-400">
+                                <i className="fas fa-search text-5xl mb-4 opacity-50 block"></i>
+                                <p className="font-bold text-lg">Buku tidak ditemukan.</p>
+                            </div>
+                        ) : (
+                            currentData.map(i => (
+                                <div key={i.id} onClick={() => setSB(i)} className="border border-slate-200/60 rounded-[1.5rem] p-6 hover:shadow-xl hover:-translate-y-2 transition-all bg-white flex gap-5 cursor-pointer group">
+                                    <div className="w-24 h-36 shrink-0 rounded-lg overflow-hidden bg-slate-100">{i.cover ? <img src={i.cover} className="w-full h-full object-cover" alt="Cover" /> : <i className="fas fa-book text-3xl text-slate-300 w-full h-full flex items-center justify-center"></i>}</div>
+                                    <div className="flex flex-col flex-1">
+                                        <h3 className="font-black text-lg text-slate-800 line-clamp-2">{i.judul}</h3>
+                                        {i.anakJudul && <p className="text-[9px] italic text-slate-500 line-clamp-1">{i.anakJudul}</p>}
+                                        <p className="text-xs font-bold text-slate-500 mb-2 truncate">{i.pengarang}</p>
+                                        <div className="mt-1 mb-3">
+                                            <span className={`inline-block px-2 py-1 rounded border text-[9px] font-black uppercase ${i.stock > 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}><i className={`fas ${i.stock > 0 ? 'fa-check' : 'fa-times'} mr-1`}></i> {i.stock > 0 ? `Tersedia (${i.stock})` : 'Dipinjam'}</span>
+                                        </div>
+                                        <div className="mt-auto flex flex-col gap-1 text-[10px] font-bold text-slate-400 uppercase">
+                                            <p><i className="fas fa-map-pin w-3 text-indigo-400"></i> Rak: {i.lokasiRak || '-'}</p>
+                                            <p><i className="fas fa-bookmark w-3 text-indigo-400"></i> {i.klasifikasiDDC}</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))
+                        )}
                     </div>
+
+                    {/* KONTROL PAGINATION DI BAGIAN BAWAH */}
+                    {f.length > 0 && (
+                        <div className="p-5 border-t border-slate-100 bg-white flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 rounded-b-[2rem]">
+                            <div className="text-xs font-bold text-slate-500">
+                                Menampilkan <span className="text-indigo-600 px-1">{(currentPage - 1) * itemsPerPage + 1}</span> 
+                                - <span className="text-indigo-600 px-1">{Math.min(currentPage * itemsPerPage, f.length)}</span> 
+                                dari <span className="text-indigo-600 px-1">{f.length}</span> Koleksi
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button 
+                                    disabled={currentPage === 1} 
+                                    onClick={() => setCurrentPage(currentPage - 1)} 
+                                    className="w-10 h-10 rounded-full bg-slate-50 border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                                >
+                                    <i className="fas fa-chevron-left text-sm"></i>
+                                </button>
+                                <span className="font-black text-sm text-slate-700 mx-2 bg-slate-50 px-4 py-2 rounded-xl shadow-sm border border-slate-100">
+                                    Hal {currentPage} <span className="text-slate-400 font-medium mx-1">/</span> {totalPages}
+                                </span>
+                                <button 
+                                    disabled={currentPage === totalPages} 
+                                    onClick={() => setCurrentPage(currentPage + 1)} 
+                                    className="w-10 h-10 rounded-full bg-slate-50 border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                                >
+                                    <i className="fas fa-chevron-right text-sm"></i>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    
                     <BookDetailModal isOpen={!!sB} onClose={() => setSB(null)} book={sB} />
                 </div>
             );
@@ -2674,8 +2891,16 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
     const [f, setF] = useState({ idA: '', kodeEksemplar: '', tgl: new Date().toISOString().split('T')[0], lama: 7, isPaket: false });
     const [sQ, setSQ] = useState(''), [sD, setSD] = useState(false), [sA, setSA] = useState(null), [sL, setSL] = useState(null), [iE, setIE] = useState(false), [eF, setEF] = useState({ tglPinjam: '', tglHarusKembali: '' });
     
-    // STATE BARU UNTUK PENCARIAN DAFTAR BERJALAN
     const [searchBerjalan, setSearchBerjalan] = useState('');
+
+    // REF UNTUK AUTO-FOCUS KE IDENTITAS PEMINJAM
+    const identitasRef = useRef(null);
+    useEffect(() => {
+        // Otomatis fokus ke kolom pencarian identitas saat menu dibuka
+        setTimeout(() => {
+            if (identitasRef.current) identitasRef.current.focus();
+        }, 100);
+    }, []);
 
     // TRIK ANTI-BLANK: Pastikan data selalu berupa Array
     const dAnggota = anggota || [];
@@ -2692,7 +2917,6 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             const oId = String(a?.id || '').replace(/\s+/g, '').toUpperCase();
             const oNisn = String(a?.nisn || '').replace(/\s+/g, '').toUpperCase();
             
-            // Cek apakah scan cocok dengan ID asli ATAU cocok dengan Kode Unik Pendek
             return oId === vClean || oNisn === vClean || 
                    getShortBarcode(oId) === vClean || getShortBarcode(oNisn) === vClean;
         }); 
@@ -2707,7 +2931,6 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         const cbFocus = () => setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
         if (!sA) return showAlert("Gagal", "Pilih peminjam!", "warning", cbFocus);
         
-        // Trik Anti-Ngebut Scanner: Ambil nilai langsung dari kotak input HTML secara paksa
         const inputEl = document.getElementById('barcodeInput');
         const actualScan = inputEl ? inputEl.value : f.kodeEksemplar;
         const rawScan = String(actualScan).trim().toUpperCase();
@@ -2721,7 +2944,6 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         if (hT) return showAlert("Ditolak", "Ada tanggungan tahun lalu!", "error", cbFocus);
         if (hL) return showAlert("Ditolak", "Ada tanggungan terlambat!", "error", cbFocus);
 
-        // Proses Pencarian Buku
         const scanS = rawScan.replace(/[\s\*]+/g, '');
         const lastDash = rawScan.lastIndexOf('-'); 
         const baseCode = lastDash > 0 ? rawScan.substring(0, lastDash).replace(/[\s\*]+/g, '') : scanS;
@@ -2732,12 +2954,10 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             const isb = String(x?.isbn || '').replace(/\s+/g, '').toUpperCase();
             const xid = String(x?.id || '').replace(/\s+/g, '').toUpperCase();
 
-            // Cek Kode Asli
             if (ni && (ni === scanS || ni === baseCode)) return true;
             if (isb && (isb === scanS || isb === baseCode)) return true;
             if (xid && (xid === scanS || xid === baseCode)) return true;
             
-            // Cek Kode Pendek Unik (Hash)
             if (ni && (getShortBarcode(ni) === scanS || getShortBarcode(ni) === baseCode)) return true;
             if (isb && (getShortBarcode(isb) === scanS || getShortBarcode(isb) === baseCode)) return true;
             if (xid && (getShortBarcode(xid) === scanS || getShortBarcode(xid) === baseCode)) return true;
@@ -2745,7 +2965,6 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
             return false;
         });
         
-        // Pesan error diperbarui agar memunculkan kode yang ditangkap scanner
         if (!b) {
             setF({ ...f, kodeEksemplar: '' }); 
             if (inputEl) inputEl.value = '';
@@ -2782,13 +3001,40 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         } catch (e) { console.error("Gagal update stok:", e); }
         
         setF({ ...f, kodeEksemplar: '' });
-        if (inputEl) inputEl.value = ''; // Kosongkan manual untuk tembakan berikutnya
+        if (inputEl) inputEl.value = ''; 
         showAlert('Berhasil', "Sirkulasi dicatat!", 'success', cbFocus);
     };
 
     const oM = l => { setSL(l); setEF({ tglPinjam: l.tglPinjam, tglHarusKembali: l.tglHarusKembali }); setIE(false); };
     const hSE = () => { onUpdate(sL.id, { tglPinjam: eF.tglPinjam, tglHarusKembali: eF.tglHarusKembali }); setSL({ ...sL, ...eF }); setIE(false); showAlert('Berhasil', 'Diperbarui.', 'success'); };
     const hCT = () => showConfirm('Batal', 'Yakin batalkan? Stok kembali.', () => { const b = dBuku.find(x => x.id === sL.idBuku); if (b) onUpdateBuku('buku', b.id, { stock: parseInt(b.stock || 0) + 1 }); onDelete(sL.id); setSL(null); showAlert('Dibatalkan', 'Dihapus.', 'success'); });
+
+    // ==========================================
+    // LOGIKA FILTER TABEL CERDAS UNTUK MERINGANKAN CACHE
+    // ==========================================
+    const filteredBerjalan = useMemo(() => {
+        // Ambil semua data yang sedang dipinjam (Di-reverse agar yang paling baru di atas)
+        let pinjamAktif = dTransaksi.filter(d => d.status === 'Dipinjam').reverse();
+
+        if (sA) {
+            // JIKA IDENTITAS DIPILIH: Tampilkan SEMUA buku yang dipegang siswa ini
+            return pinjamAktif.filter(d => d.idAnggota === sA.id);
+        } 
+        
+        if (searchBerjalan) {
+            // JIKA ADA KATA KUNCI PENCARIAN DI KOTAK KANAN
+            const q = searchBerjalan.toLowerCase();
+            return pinjamAktif.filter(d => 
+                (d.namaPeminjam || '').toLowerCase().includes(q) || 
+                (d.judulBuku || '').toLowerCase().includes(q) || 
+                (d.kodeEksemplar || '').toLowerCase().includes(q)
+            );
+        }
+
+        // JIKA KOSONG SEMUA: Tampilkan hanya 10 transaksi terbaru untuk meringankan Browser
+        return pinjamAktif.slice(0, 10);
+    }, [dTransaksi, sA, searchBerjalan]);
+
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
@@ -2798,24 +3044,25 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     <div className="relative z-20">
                         <label className="block text-sm font-bold mb-1.5">Identitas Peminjam</label>
                         {sA ? (
-                            <div className="flex justify-between bg-indigo-50 border border-indigo-200 p-3.5 rounded-2xl">
+                            <div className="flex justify-between bg-indigo-50 border border-indigo-200 p-3.5 rounded-2xl animate-[fadeIn_0.2s_ease-out]">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-white overflow-hidden flex-shrink-0 flex items-center justify-center border border-indigo-100">
+                                    <div className="w-10 h-10 rounded-full bg-white overflow-hidden flex-shrink-0 flex items-center justify-center border border-indigo-100 shadow-sm">
                                         {sA.foto ? <img src={sA.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-indigo-300"></i>}
                                     </div>
-                                    <div><p className="font-bold text-indigo-900">{sA.nama}</p><p className="text-[10px] font-bold text-indigo-500 uppercase">{sA.kategori === 'Siswa' ? formatKelasSiswa(sA, sekolah?.daftarJurusan) : sA.kategori}</p></div>
+                                    <div><p className="font-bold text-indigo-900 leading-tight">{sA.nama}</p><p className="text-[10px] font-bold text-indigo-500 uppercase">{sA.kategori === 'Siswa' ? formatKelasSiswa(sA, sekolah?.daftarJurusan) : sA.kategori}</p></div>
                                 </div>
-                                <button type="button" onClick={() => { setSA(null); setF({ ...f, idA: '' }); }} className="w-8 h-8 bg-white text-rose-500 rounded-full my-auto shadow-sm"><i className="fas fa-times"></i></button>
+                                <button type="button" onClick={() => { setSA(null); setF({ ...f, idA: '' }); setTimeout(() => identitasRef.current?.focus(), 100); }} className="w-8 h-8 bg-white text-rose-500 rounded-full my-auto shadow-sm hover:scale-110 transition-transform"><i className="fas fa-times"></i></button>
                             </div>
                         ) : (
                             <div className="relative">
                                 <i className="fas fa-search absolute left-4 top-3.5 text-indigo-400"></i>
-                                <input type="text" placeholder="Ketik/Scan..." className="input-field pl-11" value={sQ} onChange={hSC} onFocus={() => setSD(true)} onBlur={() => setTimeout(() => setSD(false), 200)} />
+                                {/* REF DITAMBAHKAN DI SINI UNTUK AUTO-FOCUS */}
+                                <input ref={identitasRef} type="text" placeholder="Ketik Nama/Scan NISN..." className="input-field pl-11 shadow-inner focus:ring-4 focus:ring-indigo-100 transition-all" value={sQ} onChange={hSC} onFocus={() => setSD(true)} onBlur={() => setTimeout(() => setSD(false), 200)} />
                                 {sD && sQ.length > 1 && (
-                                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl max-h-60 overflow-y-auto z-50 border border-slate-100">
-                                        {fA.map(a => (
-                                            <div key={a.id} onMouseDown={(e) => { e.preventDefault(); setSA(a); setF(p => ({ ...p, idA: a.id })); setSQ(''); setSD(false); setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100); }} className="p-3.5 hover:bg-indigo-50 cursor-pointer flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl max-h-60 overflow-y-auto z-50 border border-slate-100 p-2">
+                                        {fA.length === 0 ? <p className="text-center text-xs font-bold text-slate-400 py-4">Tidak ditemukan</p> : fA.map(a => (
+                                            <div key={a.id} onMouseDown={(e) => { e.preventDefault(); setSA(a); setF(p => ({ ...p, idA: a.id })); setSQ(''); setSD(false); setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100); }} className="p-3 hover:bg-indigo-50 cursor-pointer flex items-center gap-3 rounded-xl transition-colors">
+                                                <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 flex items-center justify-center border border-slate-200">
                                                     {a.foto ? <img src={a.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-slate-400"></i>}
                                                 </div>
                                                 <div><p className="font-black text-slate-800 leading-tight">{a.nama}</p><p className="text-[10px] font-bold text-indigo-500 uppercase">{a.kategori === 'Siswa' ? formatKelasSiswa(a, sekolah?.daftarJurusan) : a.kategori}</p></div>
@@ -2828,7 +3075,7 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     </div>
                     <div>
                         <label className="block text-sm font-bold mb-1.5">Scan Barcode Buku</label>
-                        <input id="barcodeInput" type="text" className="input-field border-indigo-300 bg-indigo-50 font-mono font-bold" value={f.kodeEksemplar} onChange={e => setF({ ...f, kodeEksemplar: e.target.value })} required autoFocus />
+                        <input id="barcodeInput" type="text" className="input-field border-indigo-300 bg-indigo-50 font-mono font-bold text-lg shadow-inner focus:ring-4 focus:ring-indigo-100 transition-all" value={f.kodeEksemplar} onChange={e => setF({ ...f, kodeEksemplar: e.target.value })} required autoFocus={!!sA} disabled={!sA} placeholder={sA ? "Scan sekarang..." : "Pilih Peminjam Dahulu"} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <Input label="Tgl Pinjam" type="date" value={f.tgl} onChange={e => setF({ ...f, tgl: e.target.value })} required={true} />
@@ -2841,75 +3088,79 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                             <span className="text-[10px] font-medium text-slate-500">Masa pinjam otomatis 1 Tahun Ajaran</span>
                         </div>
                     </label>
-                    <button type="submit" className="btn-primary w-full py-4 text-lg">Setujui</button>
+                    <button type="submit" disabled={!sA} className="btn-primary w-full py-4 text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all">Setujui</button>
                 </form>
             </div>
             
-            {/* AREA DAFTAR PINJAMAN BERJALAN YANG DIMODIFIKASI */}
-            <div className="lg:col-span-2 bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden flex flex-col h-full min-h-[60vh]">
-                <div className="p-6 md:p-8 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
-                    <h3 className="text-xl font-bold">Daftar Pinjaman Berjalan</h3>
+            <div className="lg:col-span-2 bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden flex flex-col h-full min-h-[60vh] relative border border-slate-100/50">
+                <div className="p-6 md:p-8 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0 bg-slate-50/50">
+                    <div>
+                        <h3 className="text-xl font-black text-slate-800">Daftar Pinjaman</h3>
+                        {sA ? (
+                            <p className="text-sm font-bold text-indigo-600 mt-1 animate-[pulse_2s_ease-in-out_infinite]">Melihat {filteredBerjalan.length} tanggungan buku milik {sA.nama}</p>
+                        ) : searchBerjalan ? (
+                            <p className="text-sm font-bold text-slate-500 mt-1">Hasil Pencarian: {filteredBerjalan.length} Data</p>
+                        ) : (
+                            <p className="text-sm font-bold text-slate-500 mt-1">10 Data Terbaru <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded ml-2">Dioptimalkan</span></p>
+                        )}
+                    </div>
                     
-                    {/* INPUT PENCARIAN BARU */}
                     <div className="relative w-full sm:w-64">
-                        <i className="fas fa-search absolute left-4 top-3 text-slate-400"></i>
+                        <i className="fas fa-search absolute left-4 top-3.5 text-slate-400"></i>
                         <input 
                             type="text" 
                             placeholder="Cari Nama / Judul..." 
-                            className="w-full bg-slate-50 border border-slate-200 pl-11 pr-4 py-2.5 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-indigo-200 focus:outline-none transition-all" 
+                            className="w-full bg-white border border-slate-200 pl-11 pr-4 py-3 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-200 focus:outline-none transition-all shadow-sm" 
                             value={searchBerjalan} 
-                            onChange={e => setSearchBerjalan(e.target.value)} 
+                            onChange={e => setSearchBerjalan(e.target.value)}
+                            disabled={!!sA}
+                            title={sA ? "Hapus identitas untuk mencari manual" : ""}
                         />
                     </div>
                 </div>
-                <div className="overflow-x-auto p-4 flex-1">
+                
+                <div className="overflow-x-auto p-4 flex-1 bg-white">
                     <table className="w-full text-left text-sm whitespace-nowrap">
-                        <thead className="bg-indigo-50/50 text-indigo-600 font-bold uppercase text-[11px] rounded-xl">
-                            <tr><th className="py-4 px-6 rounded-l-2xl">Peminjam</th><th className="py-4 px-6">Buku & Kode</th><th className="py-4 px-6">Batas Waktu</th><th className="py-4 px-6 text-right rounded-r-2xl">Aksi</th></tr>
+                        <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-widest sticky top-0 z-10">
+                            <tr><th className="py-4 px-6 rounded-tl-xl">Peminjam</th><th className="py-4 px-6">Buku & Kode</th><th className="py-4 px-6">Batas Waktu</th><th className="py-4 px-6 text-right rounded-tr-xl">Aksi</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                            {/* LOGIKA FILTER PENCARIAN DITERAPKAN DI SINI */}
-                            {data.filter(d => {
-                                if (d.status !== 'Dipinjam') return false;
-                                if (!searchBerjalan) return true; // Tampilkan semua jika kotak pencarian kosong
-                                
-                                const q = searchBerjalan.toLowerCase();
-                                return (d.namaPeminjam || '').toLowerCase().includes(q) || 
-                                       (d.judulBuku || '').toLowerCase().includes(q) || 
-                                       (d.kodeEksemplar || '').toLowerCase().includes(q);
-                            }).map(i => (
-                                <tr key={i.id} className="hover:bg-slate-50/80 group">
-                                    <td className="py-4 px-6"><span onClick={() => oM(i)} className="font-bold cursor-pointer hover:text-indigo-600">{i.namaPeminjam}</span></td>
-                                    <td className="py-4 px-6"><p className="font-semibold">{i.judulBuku}</p><span className="text-[10px] font-mono bg-slate-100 px-2 py-0.5 rounded">{i.kodeEksemplar || i.isbn}</span>{i.isPaket && <span className="ml-2 text-[9px] font-black bg-purple-100 text-purple-600 px-2 py-0.5 rounded uppercase">Paket</span>}</td>
-                                    <td className="py-4 px-6"><span className="px-3 py-1.5 font-black rounded-lg bg-red-50 text-red-600 border border-red-100">{formatDate(i.tglHarusKembali)}</span></td>
-                                    <td className="py-4 px-6 flex justify-end opacity-100 md:opacity-0 group-hover:opacity-100"><button onClick={() => oM(i)} className="w-8 h-8 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center"><i className="fas fa-edit"></i></button></td>
-                                </tr>
-                            ))}
+                            {filteredBerjalan.length === 0 ? (
+                                <tr><td colSpan="4" className="text-center py-16 text-slate-400"><i className="fas fa-box-open text-4xl mb-3 opacity-50 block"></i><span className="font-bold">Tidak ada data untuk ditampilkan</span></td></tr>
+                            ) : (
+                                filteredBerjalan.map(i => (
+                                    <tr key={i.id} className={`group transition-colors ${sA ? 'bg-indigo-50/30 hover:bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                                        <td className="py-4 px-6"><span onClick={() => oM(i)} className="font-black text-slate-700 cursor-pointer hover:text-indigo-600 transition-colors">{i.namaPeminjam}</span></td>
+                                        <td className="py-4 px-6"><p className="font-bold text-slate-800">{i.judulBuku}</p><span className="text-[10px] font-mono bg-white border border-slate-200 shadow-sm px-2 py-0.5 rounded text-slate-500 mt-1 inline-block">{i.kodeEksemplar || i.isbn}</span>{i.isPaket && <span className="ml-2 text-[9px] font-black bg-purple-100 text-purple-600 border border-purple-200 px-2 py-0.5 rounded uppercase shadow-sm">Paket</span>}</td>
+                                        <td className="py-4 px-6"><span className="px-3 py-1.5 font-black rounded-lg bg-red-50 text-red-600 border border-red-100 shadow-sm">{formatDate(i.tglHarusKembali)}</span></td>
+                                        <td className="py-4 px-6 flex justify-end opacity-100 md:opacity-0 group-hover:opacity-100"><button onClick={() => oM(i)} className="w-8 h-8 bg-white border shadow-sm text-blue-500 rounded-lg flex items-center justify-center hover:bg-blue-500 hover:text-white transition-colors hover:scale-110"><i className="fas fa-edit"></i></button></td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {/* MODAL DETAIL PINJAMAN */}
             {sL && (
-                <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-4" onClick={() => setSL(null)}>
+                <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setSL(null)}>
                     <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md p-8 animate-[bounceIn_0.3s_ease-out]" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center border-b pb-4 mb-5"><h3 className="text-xl font-black"><i className="fas fa-info-circle text-indigo-500 mr-2"></i> Detail Pinjaman</h3><button onClick={() => setSL(null)} className="w-8 h-8 bg-slate-100 rounded-full"><i className="fas fa-times"></i></button></div>
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-4 mb-5"><h3 className="text-xl font-black"><i className="fas fa-info-circle text-indigo-500 mr-2"></i> Detail Pinjaman</h3><button onClick={() => setSL(null)} className="w-8 h-8 bg-slate-100 hover:bg-rose-100 hover:text-rose-600 transition-colors rounded-full"><i className="fas fa-times"></i></button></div>
                         <div className="space-y-5">
-                            <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Identitas Peminjam</p><p className="text-lg font-black text-indigo-900">{sL.namaPeminjam}</p></div>
-                            <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Buku yang Dipinjam</p><p className="text-base font-bold text-slate-800 leading-tight">{sL.judulBuku}</p><div className="mt-1.5 inline-flex items-center gap-2 bg-slate-100 px-2.5 py-1 rounded border border-slate-200"><i className="fas fa-barcode text-slate-400 text-xs"></i><p className="text-xs font-mono font-bold text-slate-600">{sL.kodeEksemplar || sL.isbn}</p></div></div>
-                            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border">
-                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Tanggal Pinjam</p>{iE ? (<input type="date" className="w-full text-xs font-bold bg-white border rounded p-1.5" value={eF.tglPinjam} onChange={e => setEF({ ...eF, tglPinjam: e.target.value })} />) : (<p className="text-sm font-bold">{formatDate(sL.tglPinjam)}</p>)}</div>
-                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Batas Kembali</p>{iE ? (<input type="date" className="w-full text-xs font-bold text-rose-600 bg-white border rounded p-1.5" value={eF.tglHarusKembali} onChange={e => setEF({ ...eF, tglHarusKembali: e.target.value })} />) : (<p className="text-sm font-bold text-rose-600">{formatDate(sL.tglHarusKembali)}</p>)}</div>
+                            <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Identitas Peminjam</p><p className="text-lg font-black text-indigo-900">{sL.namaPeminjam}</p></div>
+                            <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Buku yang Dipinjam</p><p className="text-base font-bold text-slate-800 leading-tight">{sL.judulBuku}</p><div className="mt-1.5 inline-flex items-center gap-2 bg-slate-50 px-2.5 py-1 rounded border border-slate-200"><i className="fas fa-barcode text-slate-400 text-xs"></i><p className="text-xs font-mono font-bold text-slate-600">{sL.kodeEksemplar || sL.isbn}</p></div></div>
+                            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 shadow-inner">
+                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Tanggal Pinjam</p>{iE ? (<input type="date" className="w-full text-xs font-bold bg-white border rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200" value={eF.tglPinjam} onChange={e => setEF({ ...eF, tglPinjam: e.target.value })} />) : (<p className="text-sm font-bold">{formatDate(sL.tglPinjam)}</p>)}</div>
+                                <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">Batas Kembali</p>{iE ? (<input type="date" className="w-full text-xs font-bold text-rose-600 bg-white border rounded p-1.5 focus:outline-none focus:ring-2 focus:ring-rose-200" value={eF.tglHarusKembali} onChange={e => setEF({ ...eF, tglHarusKembali: e.target.value })} />) : (<p className="text-sm font-bold text-rose-600">{formatDate(sL.tglHarusKembali)}</p>)}</div>
                             </div>
-                            <div className="flex justify-between items-center pt-2"><p className="text-sm font-bold text-slate-500">Status Saat Ini:</p><span className="inline-block px-4 py-2 font-black rounded-xl bg-amber-50 text-amber-600 border border-amber-100 text-xs uppercase shadow-sm">{sL.status}</span></div>
+                            <div className="flex justify-between items-center pt-2"><p className="text-sm font-bold text-slate-500">Status Saat Ini:</p><span className="inline-block px-4 py-2 font-black rounded-xl bg-amber-50 text-amber-600 border border-amber-100 text-xs uppercase shadow-sm tracking-widest">{sL.status}</span></div>
                         </div>
-                        <div className="mt-8 pt-5 border-t flex justify-between gap-3">
-                            <button onClick={hCT} className="px-4 py-2 bg-rose-50 text-rose-600 font-bold text-xs rounded-xl border border-rose-100"><i className="fas fa-trash-alt mr-2"></i> Batalkan</button>
+                        <div className="mt-8 pt-5 border-t border-slate-100 flex justify-between gap-3">
+                            <button onClick={hCT} className="px-4 py-2 bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white transition-colors font-bold text-xs rounded-xl border border-rose-100"><i className="fas fa-trash-alt mr-2"></i> Batalkan</button>
                             {iE ? (
-                                <div className="flex gap-2"><button onClick={() => setIE(false)} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl">Batal</button><button onClick={hSE} className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-md"><i className="fas fa-save mr-2"></i> Simpan</button></div>
+                                <div className="flex gap-2"><button onClick={() => setIE(false)} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl hover:bg-slate-200">Batal</button><button onClick={hSE} className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-lg hover:bg-indigo-700 hover:scale-105 transition-all"><i className="fas fa-save mr-2"></i> Simpan</button></div>
                             ) : (
-                                <button onClick={() => setIE(true)} className="px-4 py-2 bg-blue-50 text-blue-600 font-bold text-xs rounded-xl border border-blue-100"><i className="fas fa-edit mr-2"></i> Edit Tanggal</button>
+                                <button onClick={() => setIE(true)} className="px-4 py-2 bg-blue-50 hover:bg-blue-500 text-blue-600 hover:text-white transition-colors font-bold text-xs rounded-xl border border-blue-100"><i className="fas fa-edit mr-2"></i> Edit Tanggal</button>
                             )}
                         </div>
                     </div>
@@ -2923,8 +3174,11 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
     const [s, setS] = useState(''), [vC, setVC] = useState(''), [sDS, setSDS] = useState(false), [dI, setDI] = useState(sekolah?.dendaHarian || 1000);
     
     const [confirmBook, setConfirmBook] = useState(null);
-    // STATE BARU: Untuk kontrol tampilan Splash Screen Berhasil
     const [showSplash, setShowSplash] = useState(false);
+
+    // STATE BARU UNTUK PAGINATION (PAGINASI)
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 25; 
 
     useEffect(() => { setDI(sekolah?.dendaHarian || 1000); }, [sekolah?.dendaHarian]);
     
@@ -2961,7 +3215,6 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
         
         const cbFocus = () => setTimeout(() => document.getElementById('barcodeKembali')?.focus(), 100);
         
-        // PERUBAHAN: Jika ada denda telat atau hilang, pakai Alert manual. Jika mulus, pakai Splash otomatis.
         if (d > 0 && !h) {
             showAlert('Denda!', `Denda telat: Rp ${d.toLocaleString('id-ID')}`, 'warning', cbFocus);
             setVC('');
@@ -2973,7 +3226,6 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
         else {
             setShowSplash(true);
             setVC('');
-            // Auto-dismiss setelah 1 detik & Kembalikan Kursor
             setTimeout(() => {
                 setShowSplash(false);
                 cbFocus();
@@ -3000,6 +3252,21 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
         }
     };
 
+    // LOGIKA FILTER & PAGINASI UNTUK TABEL
+    const fD = data.filter(d => {
+        if (d.status !== 'Dipinjam') return false;
+        if (s) {
+            const q = s.toLowerCase();
+            return (d.namaPeminjam || '').toLowerCase().includes(q) || 
+                   (d.judulBuku || '').toLowerCase().includes(q) || 
+                   (d.kodeEksemplar || '').toLowerCase().includes(q);
+        }
+        return true;
+    }).sort((a, b) => new Date(a.tglHarusKembali) - new Date(b.tglHarusKembali)); // Diurutkan otomatis: yang paling telat/mendesak muncul di atas
+
+    const totalPages = Math.ceil(fD.length / itemsPerPage) || 1;
+    const currentData = fD.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
     return (
         <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden flex flex-col h-full min-h-[80vh] relative">
             <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-8 md:p-10 shrink-0">
@@ -3022,14 +3289,31 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
                 </form>
             </div>
             
-            <div className="p-6 md:p-8 flex-1 flex flex-col">
-                <div className="overflow-x-auto w-full border border-slate-200 rounded-2xl flex-1 custom-scrollbar">
+            {/* AREA FILTER PENCARIAN TABEL BAWAH */}
+            <div className="p-6 md:px-8 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0 bg-slate-50/50">
+                <h3 className="text-xl font-black text-slate-800">Daftar Pinjaman Aktif</h3>
+                <div className="relative w-full sm:w-80">
+                    <i className="fas fa-search absolute left-4 top-3.5 text-slate-400"></i>
+                    <input 
+                        type="text" 
+                        placeholder="Cari Peminjam, Buku, Barcode..." 
+                        className="w-full bg-white border border-slate-200 pl-11 pr-4 py-2.5 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-200 focus:outline-none transition-all shadow-sm" 
+                        value={s} 
+                        onChange={e => { setS(e.target.value); setCurrentPage(1); }} 
+                    />
+                </div>
+            </div>
+
+            <div className="p-0 flex-1 flex flex-col overflow-hidden">
+                <div className="overflow-x-auto w-full flex-1 custom-scrollbar bg-white">
                     <table className="w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[11px] sticky top-0 z-10">
-                            <tr><th className="py-4 px-6 rounded-tl-2xl">Identitas</th><th className="py-4 px-6">Buku & Barcode</th><th className="py-4 px-6">Status Waktu</th><th className="py-4 px-6 text-right rounded-tr-2xl">Aksi Manual</th></tr>
+                            <tr><th className="py-4 px-6">Identitas</th><th className="py-4 px-6">Buku & Barcode</th><th className="py-4 px-6">Status Waktu</th><th className="py-4 px-6 text-right">Aksi Manual</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {data.filter(d => d.status === 'Dipinjam').map(i => {
+                            {currentData.length === 0 ? (
+                                <tr><td colSpan="4" className="text-center py-12 text-slate-400 font-bold">Data kosong atau tidak ditemukan.</td></tr>
+                            ) : currentData.map(i => {
                                 const iL = new Date() > new Date(i.tglHarusKembali);
                                 return (
                                     <tr key={i.id} className="hover:bg-slate-50/50">
@@ -3047,6 +3331,34 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
                             })}
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            {/* KONTROL PAGINATION DI BAGIAN BAWAH */}
+            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 rounded-b-[2rem]">
+                <div className="text-xs font-bold text-slate-500">
+                    Menampilkan <span className="text-emerald-600 px-1">{fD.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}</span> 
+                    - <span className="text-emerald-600 px-1">{Math.min(currentPage * itemsPerPage, fD.length)}</span> 
+                    dari <span className="text-emerald-600 px-1">{fD.length}</span> Pinjaman Aktif
+                </div>
+                <div className="flex items-center gap-3">
+                    <button 
+                        disabled={currentPage === 1} 
+                        onClick={() => setCurrentPage(currentPage - 1)} 
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+                    >
+                        <i className="fas fa-chevron-left text-sm"></i>
+                    </button>
+                    <span className="font-black text-sm text-slate-700 mx-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-100">
+                        Hal {currentPage} <span className="text-slate-400 font-medium mx-1">/</span> {totalPages}
+                    </span>
+                    <button 
+                        disabled={currentPage === totalPages} 
+                        onClick={() => setCurrentPage(currentPage + 1)} 
+                        className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+                    >
+                        <i className="fas fa-chevron-right text-sm"></i>
+                    </button>
                 </div>
             </div>
 
@@ -3108,52 +3420,65 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
             const [tH0, setTH0] = useState(sekolah?.waTemplateH0 || dH0);
             const [tHP, setTHP] = useState(sekolah?.waTemplatePlus || dHP);
 
+            // STATE BARU UNTUK PAGINATION (PAGINASI)
+            const [currentPage, setCurrentPage] = useState(1);
+            const itemsPerPage = 10; // Menampilkan 10 baris per halaman sesuai permintaan
+
             useEffect(() => { const kD = e => { if (e.ctrlKey && e.key.toLowerCase() === 'q') { e.preventDefault(); setSTS(p => !p); } }; window.addEventListener('keydown', kD); return () => window.removeEventListener('keydown', kD); }, []);
 
             const gTL = useMemo(() => {
-    const td = new Date(); 
-    td.setHours(0, 0, 0, 0); 
-    let t = [];
-    
-    // 1. Fungsi penentu waktu sapaan
-    const jam = new Date().getHours();
-    let sapaanWaktu = "Pagi";
-    if (jam >= 11 && jam < 15) sapaanWaktu = "Siang";
-    else if (jam >= 15 && jam < 18) sapaanWaktu = "Sore";
-    else if (jam >= 18) sapaanWaktu = "Malam";
+                const td = new Date(); 
+                td.setHours(0, 0, 0, 0); 
+                let t = [];
+                
+                // 1. Fungsi penentu waktu sapaan
+                const jam = new Date().getHours();
+                let sapaanWaktu = "Pagi";
+                if (jam >= 11 && jam < 15) sapaanWaktu = "Siang";
+                else if (jam >= 15 && jam < 18) sapaanWaktu = "Sore";
+                else if (jam >= 18) sapaanWaktu = "Malam";
 
-    // 2. Tambahkan replace [SAPAAN] pada fungsi pM
-    const pM = (tp, u, l, d) => tp
-        .replace(/\[NAMA\]/g, u.nama)
-        .replace(/\[SAPAAN\]/g, sapaanWaktu) // Parameter baru
-        .replace(/\[SEKOLAH\]/g, sekolah?.nama || 'Instansi')
-        .replace(/\[JUDUL\]/g, l.judulBuku)
-        .replace(/\[BATAS\]/g, formatDate(l.tglHarusKembali))
-        .replace(/\[HARI_INI\]/g, formatDate(new Date().toISOString().split('T')[0]))
-        .replace(/\[TERLAMBAT\]/g, Math.abs(d));
-    
-    peminjaman.filter(p => p.status === 'Dipinjam').forEach(l => {
-        const u = anggota.find(a => a.id === l.idAnggota); 
-        if (!u || !u.telepon) return;
-        
-        const rD = new Date(l.tglHarusKembali); 
-        rD.setHours(0, 0, 0, 0);
-        const dD = Math.round((rD.getTime() - td.getTime()) / (1000 * 60 * 60 * 24));
-        let sH = '', m = '';
-        
-        if (dD === 1) { sH = 'H-1'; m = pM(tH1, u, l, dD); }
-        else if (dD === 0) { sH = 'Hari H'; m = pM(tH0, u, l, dD); }
-        else if (dD < 0) { sH = `H+${Math.abs(dD)}`; m = pM(tHP, u, l, dD); }
-        
-        if (sH) t.push({ ...l, user: u, statusH: sH, msg: m, diffDays: dD, waUrl: `https://wa.me/${formatWA(u.telepon)}?text=${encodeURIComponent(m)}` });
-    });
-    return t.sort((a, b) => a.diffDays - b.diffDays);
-}, [peminjaman, anggota, sekolah, tH1, tH0, tHP]);
+                // 2. Tambahkan replace [SAPAAN] pada fungsi pM
+                const pM = (tp, u, l, d) => tp
+                    .replace(/\[NAMA\]/g, u.nama)
+                    .replace(/\[SAPAAN\]/g, sapaanWaktu) 
+                    .replace(/\[SEKOLAH\]/g, sekolah?.nama || 'Instansi')
+                    .replace(/\[JUDUL\]/g, l.judulBuku)
+                    .replace(/\[BATAS\]/g, formatDate(l.tglHarusKembali))
+                    .replace(/\[HARI_INI\]/g, formatDate(new Date().toISOString().split('T')[0]))
+                    .replace(/\[TERLAMBAT\]/g, Math.abs(d));
+                
+                peminjaman.filter(p => p.status === 'Dipinjam').forEach(l => {
+                    const u = anggota.find(a => a.id === l.idAnggota); 
+                    if (!u || !u.telepon) return;
+                    
+                    const rD = new Date(l.tglHarusKembali); 
+                    rD.setHours(0, 0, 0, 0);
+                    const dD = Math.round((rD.getTime() - td.getTime()) / (1000 * 60 * 60 * 24));
+                    let sH = '', m = '';
+                    
+                    if (dD === 1) { sH = 'H-1'; m = pM(tH1, u, l, dD); }
+                    else if (dD === 0) { sH = 'Hari H'; m = pM(tH0, u, l, dD); }
+                    else if (dD < 0) { sH = `H+${Math.abs(dD)}`; m = pM(tHP, u, l, dD); }
+                    
+                    if (sH) t.push({ ...l, user: u, statusH: sH, msg: m, diffDays: dD, waUrl: `https://wa.me/${formatWA(u.telepon)}?text=${encodeURIComponent(m)}` });
+                });
+                return t.sort((a, b) => a.diffDays - b.diffDays);
+            }, [peminjaman, anggota, sekolah, tH1, tH0, tHP]);
+
+            // LOGIKA PAGINATION
+            const totalPages = Math.ceil(gTL.length / itemsPerPage) || 1;
+            const currentData = gTL.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+            // Mencegah error halaman kosong jika data berkurang
+            useEffect(() => {
+                if (currentPage > totalPages) setCurrentPage(Math.max(1, totalPages));
+            }, [totalPages, currentPage]);
 
             const hB = async () => {
                 if (gTL.length === 0) return showAlert("Kosong", "Tidak ada daftar peminjaman yang perlu dikirim saat ini.", "info");
                 
-                showConfirm("Kirim Broadcast WA", "Apakah Anda yakin ingin mengirim pesan WhatsApp ke semua daftar ini?\n\n(Pastikan Pop-up browser diizinkan agar tab WA terbuka otomatis)", async () => {
+                showConfirm("Kirim Broadcast WA", "Apakah Anda yakin ingin mengirim pesan WhatsApp ke SELURUH daftar ini?\n\n(Pastikan Pop-up browser diizinkan agar tab WA terbuka otomatis)", async () => {
                     setIS(true);
                     for (let i = 0; i < gTL.length; i++) {
                         setPG(i + 1); window.open(gTL[i].waUrl, '_blank');
@@ -3166,14 +3491,14 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
 
             return (
                 <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden flex flex-col h-[80vh] relative">
-                    <div className="p-6 border-b flex justify-between items-center shrink-0">
+                    <div className="p-6 md:p-8 border-b flex justify-between items-center shrink-0 bg-white">
                         <div>
                             <h2 className="text-2xl font-black flex items-center gap-3"><i className="fab fa-whatsapp text-emerald-500"></i> Peringatan WA</h2>
-                            <button onClick={() => setSTS(!sTS)} className="mt-2 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold border border-indigo-100">Edit Template</button>
+                            <button onClick={() => setSTS(!sTS)} className="mt-2 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold border border-indigo-100 hover:bg-indigo-100 transition-colors">Edit Template</button>
                         </div>
                         <div className="flex gap-3 items-center">
-                            {iS && <div className="text-sm font-bold text-emerald-600 bg-emerald-50 px-4 py-2.5 rounded-xl border animate-pulse">Mengirim: {pG}/{gTL.length}</div>}
-                            <button onClick={hB} disabled={iS} className={`px-6 py-3 font-bold text-white rounded-xl shadow-lg ${iS ? 'bg-slate-400' : 'bg-gradient-to-r from-emerald-500 to-teal-600'}`}>{iS ? 'Memproses...' : 'Kirim Semua'}</button>
+                            {iS && <div className="text-sm font-bold text-emerald-600 bg-emerald-50 px-4 py-2.5 rounded-xl border border-emerald-200 animate-pulse">Mengirim: {pG}/{gTL.length}</div>}
+                            <button onClick={hB} disabled={iS} className={`px-6 py-3 font-bold text-white rounded-xl shadow-lg transition-transform hover:-translate-y-0.5 active:scale-95 ${iS ? 'bg-slate-400' : 'bg-gradient-to-r from-emerald-500 to-teal-600'}`}>{iS ? 'Memproses...' : 'Kirim Semua'}</button>
                         </div>
                     </div>
                     {sTS && (
@@ -3181,36 +3506,67 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
                             <div className="max-w-4xl mx-auto bg-white border shadow-2xl rounded-[2rem] p-8">
                                 <div className="flex justify-between items-center mb-6 pb-4 border-b">
                                     <h3 className="text-2xl font-black">Editor Template</h3>
-                                    <button onClick={() => setSTS(false)} className="w-10 h-10 bg-slate-100 rounded-full"><i className="fas fa-times"></i></button>
+                                    <button onClick={() => setSTS(false)} className="w-10 h-10 bg-slate-100 rounded-full hover:bg-rose-100 hover:text-rose-600 transition-colors"><i className="fas fa-times"></i></button>
                                 </div>
                                 <div className="space-y-6">
-                                    <div className="border p-5 rounded-2xl bg-slate-50"><label className="font-black block mb-2">H-1</label><textarea rows="3" className="w-full p-4 rounded-xl border focus:outline-none" value={tH1} onChange={e => setTH1(e.target.value)}></textarea></div>
-                                    <div className="border p-5 rounded-2xl bg-slate-50"><label className="font-black block mb-2">Hari H</label><textarea rows="3" className="w-full p-4 rounded-xl border focus:outline-none" value={tH0} onChange={e => setTH0(e.target.value)}></textarea></div>
-                                    <div className="border p-5 rounded-2xl bg-slate-50"><label className="font-black block mb-2">Terlambat</label><textarea rows="3" className="w-full p-4 rounded-xl border focus:outline-none" value={tHP} onChange={e => setTHP(e.target.value)}></textarea></div>
+                                    <div className="border p-5 rounded-2xl bg-slate-50"><label className="font-black block mb-2 text-slate-700">Peringatan H-1</label><textarea rows="3" className="w-full p-4 rounded-xl border focus:outline-none focus:ring-2 focus:ring-indigo-200" value={tH1} onChange={e => setTH1(e.target.value)}></textarea></div>
+                                    <div className="border p-5 rounded-2xl bg-slate-50"><label className="font-black block mb-2 text-slate-700">Peringatan Hari H</label><textarea rows="3" className="w-full p-4 rounded-xl border focus:outline-none focus:ring-2 focus:ring-indigo-200" value={tH0} onChange={e => setTH0(e.target.value)}></textarea></div>
+                                    <div className="border p-5 rounded-2xl bg-slate-50"><label className="font-black block mb-2 text-slate-700">Peringatan Terlambat</label><textarea rows="3" className="w-full p-4 rounded-xl border focus:outline-none focus:ring-2 focus:ring-indigo-200" value={tHP} onChange={e => setTHP(e.target.value)}></textarea></div>
                                 </div>
                                 <div className="mt-8 flex justify-end gap-3">
-                                    <button onClick={() => { onUpdatePengaturan({ ...sekolah, waTemplateH1: tH1, waTemplateH0: tH0, waTemplatePlus: tHP }); setSTS(false); }} className="px-6 py-3 font-bold text-white bg-indigo-600 rounded-xl">Simpan</button>
+                                    <button onClick={() => { onUpdatePengaturan({ ...sekolah, waTemplateH1: tH1, waTemplateH0: tH0, waTemplatePlus: tHP }); setSTS(false); }} className="px-6 py-3 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-lg">Simpan Template</button>
                                 </div>
                             </div>
                         </div>
                     )}
-                    <div className="p-0 flex-1 overflow-auto">
+                    
+                    <div className="p-0 flex-1 overflow-auto bg-white">
                         <table className="w-full text-left text-sm whitespace-nowrap">
                             <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[11px] sticky top-0 z-10">
                                 <tr><th className="py-4 px-6">Identitas</th><th className="py-4 px-6">Buku & Batas</th><th className="py-4 px-6">Status Waktu</th><th className="py-4 px-6 text-right">Aksi</th></tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {gTL.length === 0 ? <tr><td colSpan="4" className="text-center py-12 font-bold text-slate-400">Kosong.</td></tr> : gTL.map((i, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-50/50">
-                                        <td className="py-4 px-6"><p className="font-black">{i.namaPeminjam}</p><p className="text-xs font-semibold text-slate-500">{formatWA(i.user.telepon)}</p></td>
-                                        <td className="py-4 px-6"><p className="font-semibold truncate max-w-xs">{i.judulBuku}</p><p className="text-[11px] text-slate-500 font-bold">Batas: {formatDate(i.tglHarusKembali)}</p></td>
-                                        <td className="py-4 px-6"><span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase ${i.diffDays < 0 ? 'bg-rose-50 text-rose-600 border border-rose-100' : (i.diffDays === 0 ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600')}`}>{i.statusH}</span></td>
-                                        <td className="py-4 px-6 flex justify-end"><a href={i.waUrl} target="_blank" rel="noreferrer" className="px-4 py-2 text-xs font-bold bg-white text-emerald-600 border rounded-lg hover:bg-emerald-500 hover:text-white">Kirim Manual</a></td>
+                                {currentData.length === 0 ? <tr><td colSpan="4" className="text-center py-12 font-bold text-slate-400">Tidak ada tanggungan peringatan saat ini.</td></tr> : currentData.map((i, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="py-4 px-6"><p className="font-black text-slate-800">{i.namaPeminjam}</p><p className="text-xs font-semibold text-slate-500">{formatWA(i.user.telepon)}</p></td>
+                                        <td className="py-4 px-6"><p className="font-semibold text-slate-800 truncate max-w-xs">{i.judulBuku}</p><p className="text-[11px] text-slate-500 font-bold mt-0.5">Batas: {formatDate(i.tglHarusKembali)}</p></td>
+                                        <td className="py-4 px-6"><span className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase shadow-sm ${i.diffDays < 0 ? 'bg-rose-50 text-rose-600 border border-rose-100' : (i.diffDays === 0 ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-blue-50 text-blue-600 border border-blue-100')}`}>{i.statusH}</span></td>
+                                        <td className="py-4 px-6 flex justify-end"><a href={i.waUrl} target="_blank" rel="noreferrer" className="px-4 py-2 text-xs font-bold bg-white text-emerald-600 border border-slate-200 rounded-lg hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-colors">Kirim Manual</a></td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
+
+                    {/* KONTROL PAGINATION DI BAGIAN BAWAH */}
+                    {gTL.length > 0 && (
+                        <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0 rounded-b-[2rem]">
+                            <div className="text-xs font-bold text-slate-500">
+                                Menampilkan <span className="text-emerald-600 px-1">{(currentPage - 1) * itemsPerPage + 1}</span> 
+                                - <span className="text-emerald-600 px-1">{Math.min(currentPage * itemsPerPage, gTL.length)}</span> 
+                                dari <span className="text-emerald-600 px-1">{gTL.length}</span> Peringatan
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button 
+                                    disabled={currentPage === 1} 
+                                    onClick={() => setCurrentPage(currentPage - 1)} 
+                                    className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+                                >
+                                    <i className="fas fa-chevron-left text-sm"></i>
+                                </button>
+                                <span className="font-black text-sm text-slate-700 mx-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-slate-100">
+                                    Hal {currentPage} <span className="text-slate-400 font-medium mx-1">/</span> {totalPages}
+                                </span>
+                                <button 
+                                    disabled={currentPage === totalPages} 
+                                    onClick={() => setCurrentPage(currentPage + 1)} 
+                                    className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center font-bold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+                                >
+                                    <i className="fas fa-chevron-right text-sm"></i>
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
@@ -3551,6 +3907,201 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
     );
 };
 
+const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAlert, showConfirm, sekolah }) => {
+            const [sA, setSA] = useState(null);
+            const [sQ, setSQ] = useState('');
+            const [sD, setSD] = useState(false);
+            const [vC, setVC] = useState('');
+            const [showSplash, setShowSplash] = useState(false);
+
+            const identitasRef = useRef(null);
+            const barcodeRef = useRef(null);
+
+            // 1. Kursor otomatis berada di pencarian nama saat menu dibuka
+            useEffect(() => {
+                setTimeout(() => { if (identitasRef.current) identitasRef.current.focus(); }, 100);
+            }, []);
+
+            // 2. Logika Pencarian Anggota
+            const hSC = e => {
+                const vRaw = e.target.value; setSQ(vRaw); setSD(true);
+                const vClean = String(vRaw).replace(/[\s\*]+/g, '').toUpperCase();
+                
+                const em = anggota.find(a => {
+                    if (a?.status !== 'Aktif') return false;
+                    const oId = String(a?.id || '').replace(/\s+/g, '').toUpperCase();
+                    const oNisn = String(a?.nisn || '').replace(/\s+/g, '').toUpperCase();
+                    return oId === vClean || oNisn === vClean || getShortBarcode(oId) === vClean || getShortBarcode(oNisn) === vClean;
+                });
+                
+                if (em) { 
+                    setSA(em); setSQ(''); setSD(false); 
+                    setTimeout(() => barcodeRef.current?.focus(), 100); // Pindah fokus ke scanner barcode
+                }
+            };
+
+            const fA = sQ.length > 1 ? anggota.filter(a => a?.status === 'Aktif' && ((a?.nama && String(a.nama).toLowerCase().includes(sQ.toLowerCase())) || (a?.nisn && String(a.nisn).toLowerCase().includes(sQ.toLowerCase())))) : [];
+
+            // 3. Menampilkan tanggungan khusus anak tersebut
+            const tanggungan = sA ? data.filter(d => d.idAnggota === sA.id && d.status === 'Dipinjam' && d.isPaket).sort((a, b) => new Date(a.tglHarusKembali) - new Date(b.tglHarusKembali)) : [];
+
+            // 4. Eksekusi Pengembalian
+            const pR = (loanRecord) => {
+                const td = new Date().toISOString().split('T')[0];
+                onUpdate(loanRecord.id, { status: 'Dikembalikan', tglDikembalikan: td, denda: 0 });
+                
+                const b = buku.find(x => x.id === loanRecord.idBuku);
+                if (b) onUpdateBuku('buku', b.id, { stock: parseInt(b.stock || 0) + 1 });
+                
+                setShowSplash(true);
+                setVC('');
+                setTimeout(() => {
+                    setShowSplash(false);
+                    barcodeRef.current?.focus(); // Tetap fokus ke scanner untuk buku selanjutnya
+                }, 1000);
+            };
+
+            // 5. Validasi Scan Barcode (Mencegah buku tertukar)
+            const hVS = e => {
+                e.preventDefault();
+                const sC = vC.trim().toUpperCase();
+                if (!sC) return;
+                
+                const cbFocus = () => setTimeout(() => barcodeRef.current?.focus(), 100);
+
+                if (!sA) {
+                    showAlert('Gagal', 'Silakan tentukan identitas peminjam terlebih dahulu.', 'warning', cbFocus);
+                    return setVC('');
+                }
+
+                // Cari buku di daftar seluruh peminjaman paket yang aktif
+                const loanRecord = data.find(d => d.status === 'Dipinjam' && d.isPaket && 
+                    (String(d.kodeEksemplar || '').toUpperCase() === sC || 
+                     String(d.isbn || '').toUpperCase() === sC || 
+                     String(d.kodeEksemplar || '').toUpperCase().startsWith(sC + '-'))
+                );
+
+                if (!loanRecord) {
+                    showAlert('Gagal', `Barcode ${sC} tidak ditemukan dalam daftar peminjaman paket yang aktif.`, 'error', cbFocus);
+                    return setVC('');
+                }
+
+                // CEK KEPEMILIKAN BUKU
+                if (loanRecord.idAnggota === sA.id) {
+                    pR(loanRecord); // Lolos, langsung kembalikan
+                } else {
+                    // Buku milik siswa lain! Tampilkan Notifikasi Interaktif
+                    const actualBorrower = anggota.find(a => a.id === loanRecord.idAnggota);
+                    const kls = actualBorrower ? (actualBorrower.kategori === 'Siswa' ? formatKelasSiswa(actualBorrower, sekolah?.daftarJurusan) : actualBorrower.kategori) : '-';
+                    const namaAsli = actualBorrower ? actualBorrower.nama : 'Tidak diketahui';
+
+                    showConfirm(
+                        'Buku Titipan / Tertukar!', 
+                        `Buku "${loanRecord.judulBuku}" ini bukan milik ${sA.nama}.\n\nBuku ini terdaftar atas nama:\nNama: ${namaAsli}\nKelas: ${kls}\n\nApakah Anda tetap ingin memproses pengembalian buku ini sekarang?`, 
+                        () => { pR(loanRecord); }, 
+                        cbFocus
+                    );
+                    setVC('');
+                }
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
+                    <div className="lg:col-span-1 bg-white p-6 md:p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-fit border border-slate-100/50">
+                        <h2 className="text-xl font-black mb-6 text-slate-800 flex items-center gap-3"><div className="p-2 bg-emerald-50 rounded-xl text-emerald-500"><i className="fas fa-box-open"></i></div> Kembali Paket</h2>
+                        
+                        <div className="space-y-5">
+                            {/* KOTAK 1: NAMA PEMINJAM (LOCK MECHANISM) */}
+                            <div className="relative z-20">
+                                <label className="block text-sm font-bold mb-1.5 text-slate-700">Identitas Peminjam</label>
+                                {sA ? (
+                                    <div className="flex justify-between bg-emerald-50 border border-emerald-200 p-3.5 rounded-2xl animate-[fadeIn_0.2s_ease-out]">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-white overflow-hidden flex-shrink-0 flex items-center justify-center border border-emerald-100 shadow-sm">
+                                                {sA.foto ? <img src={sA.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-emerald-400"></i>}
+                                            </div>
+                                            <div><p className="font-bold text-emerald-900 leading-tight">{sA.nama}</p><p className="text-[10px] font-bold text-emerald-600 uppercase">{sA.kategori === 'Siswa' ? formatKelasSiswa(sA, sekolah?.daftarJurusan) : sA.kategori}</p></div>
+                                        </div>
+                                        <button type="button" onClick={() => { setSA(null); setTimeout(() => identitasRef.current?.focus(), 100); }} className="w-8 h-8 bg-white text-rose-500 rounded-full my-auto shadow-sm hover:scale-110 transition-transform"><i className="fas fa-times"></i></button>
+                                    </div>
+                                ) : (
+                                    <div className="relative">
+                                        <i className="fas fa-search absolute left-4 top-3.5 text-emerald-400"></i>
+                                        <input ref={identitasRef} type="text" placeholder="Ketik Nama/Scan NISN..." className="input-field pl-11 shadow-inner focus:ring-4 focus:ring-emerald-100 transition-all border-emerald-100" value={sQ} onChange={hSC} onFocus={() => setSD(true)} onBlur={() => setTimeout(() => setSD(false), 200)} />
+                                        {sD && sQ.length > 1 && (
+                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl max-h-60 overflow-y-auto z-50 border border-slate-100 p-2">
+                                                {fA.length === 0 ? <p className="text-center text-xs font-bold text-slate-400 py-4">Tidak ditemukan</p> : fA.map(a => (
+                                                    <div key={a.id} onMouseDown={(e) => { e.preventDefault(); setSA(a); setSQ(''); setSD(false); setTimeout(() => barcodeRef.current?.focus(), 100); }} className="p-3 hover:bg-emerald-50 cursor-pointer flex items-center gap-3 rounded-xl transition-colors">
+                                                        <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 flex items-center justify-center border border-slate-200">
+                                                            {a.foto ? <img src={a.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-slate-400"></i>}
+                                                        </div>
+                                                        <div><p className="font-black text-slate-800 leading-tight">{a.nama}</p><p className="text-[10px] font-bold text-emerald-500 uppercase">{a.kategori === 'Siswa' ? formatKelasSiswa(a, sekolah?.daftarJurusan) : a.kategori}</p></div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* KOTAK 2: SCAN BARCODE BUKU */}
+                            <form onSubmit={hVS}>
+                                <label className="block text-sm font-bold mb-1.5 text-slate-700">Scan Barcode Buku Paket</label>
+                                <input id="barcodeKembaliPaket" ref={barcodeRef} type="text" className="input-field border-emerald-300 bg-emerald-50 font-mono font-bold text-lg shadow-inner focus:ring-4 focus:ring-emerald-200 transition-all text-emerald-900" value={vC} onChange={e => setVC(e.target.value)} disabled={!sA} placeholder={sA ? "Scan di sini..." : "Pilih Peminjam Dahulu"} />
+                                <button type="submit" disabled={!sA} className="btn-primary w-full py-4 text-lg shadow-lg mt-5 disabled:opacity-50 disabled:cursor-not-allowed transition-all bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500">Proses Kembalikan</button>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    {/* DAFTAR TANGGUNGAN */}
+                    <div className="lg:col-span-2 bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden flex flex-col h-full min-h-[60vh] relative border border-slate-100/50">
+                        <div className="p-6 md:p-8 border-b flex justify-between items-center shrink-0 bg-slate-50/50">
+                            <div>
+                                <h3 className="text-xl font-black text-slate-800">Tanggungan Paket {sA ? sA.nama : ''}</h3>
+                                {sA ? (
+                                    <p className="text-sm font-bold text-emerald-600 mt-1">Belum dikembalikan: {tanggungan.length} Buku</p>
+                                ) : (
+                                    <p className="text-sm font-bold text-slate-400 mt-1">Pilih siswa di sebelah kiri untuk melihat data.</p>
+                                )}
+                            </div>
+                        </div>
+                        
+                        <div className="overflow-x-auto p-4 flex-1 bg-white">
+                            <table className="w-full text-left text-sm whitespace-nowrap">
+                                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-widest sticky top-0 z-10">
+                                    <tr><th className="py-4 px-6 rounded-tl-xl">Buku & Barcode</th><th className="py-4 px-6 text-right rounded-tr-xl">Batas Waktu</th></tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {!sA ? (
+                                        <tr><td colSpan="2" className="text-center py-20 text-slate-400"><i className="fas fa-user-lock text-5xl mb-4 opacity-50 block"></i><span className="font-bold">Menunggu Identitas Peminjam</span></td></tr>
+                                    ) : tanggungan.length === 0 ? (
+                                        <tr><td colSpan="2" className="text-center py-20 text-emerald-500"><i className="fas fa-check-circle text-5xl mb-4 block"></i><span className="font-bold text-lg">Bebas Tanggungan Paket!</span></td></tr>
+                                    ) : (
+                                        tanggungan.map(i => (
+                                            <tr key={i.id} className="hover:bg-slate-50 transition-colors">
+                                                <td className="py-4 px-6"><p className="font-bold text-slate-800">{i.judulBuku}</p><span className="text-[10px] font-mono bg-white border border-slate-200 shadow-sm px-2 py-0.5 rounded text-slate-500 mt-1 inline-block">{i.kodeEksemplar || i.isbn}</span></td>
+                                                <td className="py-4 px-6 text-right"><span className="px-3 py-1.5 font-black rounded-lg bg-slate-100 text-slate-600">{formatDate(i.tglHarusKembali)}</span></td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* SPLASH SCREEN KHUSUS BERHASIL (Auto-Dismiss) */}
+                    {showSplash && (
+                        <div className="fixed inset-0 bg-slate-900/40 z-[99999] flex items-center justify-center p-4 backdrop-blur-sm">
+                            <div className="bg-white rounded-3xl p-8 max-w-[280px] w-full text-center shadow-2xl animate-[zoomIn_0.2s_ease-out]">
+                                <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg shadow-emerald-200"><i className="fas fa-check"></i></div>
+                                <h3 className="text-xl font-black text-slate-800 mb-1">Berhasil</h3>
+                                <p className="text-sm font-medium text-slate-400">Buku dikembalikan!</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
 
 
         const App = () => {
@@ -3844,31 +4395,32 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                         <nav className="flex-1 overflow-y-auto py-6 space-y-2 px-1 custom-scrollbar">
                             {cU.role === 'petugas' && (
                                 <>
-                                    <NI icon={<i className="fas fa-layer-group"></i>} label="Dashboard" id="dashboard" />
-                                    <NI icon={<i className="fas fa-user-tie"></i>} label="Administrasi" id="administrasi" />
-                                    <NI icon={<i className="fas fa-users"></i>} label="Data Anggota" id="anggota" />
-                                    <NI icon={<i className="fas fa-book"></i>} label="Daftar Buku" id="buku" />
-                                        <NI icon={<i className="fas fa-clipboard-check text-teal-400"></i>} label="Audit Eksemplar" id="audit" />
+                                    <NI icon={<i className="fas fa-layer-group text-blue-400"></i>} label="Dashboard" id="dashboard" />
+                                    <NI icon={<i className="fas fa-user-tie text-purple-400"></i>} label="Administrasi" id="administrasi" />
+                                    <NI icon={<i className="fas fa-users text-pink-400"></i>} label="Data Anggota" id="anggota" />
+                                    <NI icon={<i className="fas fa-book text-sky-400"></i>} label="Daftar Buku" id="buku" />
+                                    <NI icon={<i className="fas fa-clipboard-check text-teal-400"></i>} label="Audit Eksemplar" id="audit" />
                                     <NI icon={<i className="fas fa-box-archive text-orange-400"></i>} label="Reduksi Buku" id="reduksi" />
-                                    <NI icon={<i className="fas fa-book-open"></i>} label="Pinjam Buku" id="pinjam" />
+                                    <NI icon={<i className="fas fa-book-open text-amber-400"></i>} label="Pinjam Buku" id="pinjam" />
                                     <NI icon={<i className="fab fa-whatsapp text-emerald-400"></i>} label="Peringatan WA" id="peringatan" />
-                                    <NI icon={<i className="fas fa-rotate-left"></i>} label="Pengembalian" id="kembali" />
+                                    <NI icon={<i className="fas fa-rotate-left text-cyan-400"></i>} label="Pengembalian" id="kembali" />
+                                    <NI icon={<i className="fas fa-box-open text-lime-400"></i>} label="Kembali Paket" id="kembali_paket" />
                                     <NI icon={<i className="fas fa-book-dead text-rose-400"></i>} label="Buku Hilang" id="buku_hilang" />
-                                    <NI icon={<i className="fas fa-file-invoice"></i>} label="Rekap Laporan" id="rekap" />
-                                    <NI icon={<i className="fas fa-boxes"></i>} label="Rekap Paket" id="rekap_paket" />
-                                    <NI icon={<i className="fas fa-barcode"></i>} label="Label Barcode" id="label" />
-                                    <NI icon={<i className="fas fa-id-badge"></i>} label="Kartu Anggota" id="kartu" />
-                                    <NI icon={<i className="fas fa-file-contract text-teal-400"></i>} label="Surat Bebas Pustaka" id="surat_bebas" />
+                                    <NI icon={<i className="fas fa-file-invoice text-indigo-400"></i>} label="Rekap Laporan" id="rekap" />
+                                    <NI icon={<i className="fas fa-boxes text-fuchsia-400"></i>} label="Rekap Paket" id="rekap_paket" />
+                                    <NI icon={<i className="fas fa-barcode text-yellow-300"></i>} label="Label Barcode" id="label" />
+                                    <NI icon={<i className="fas fa-id-badge text-violet-400"></i>} label="Kartu Anggota" id="kartu" />
+                                    <NI icon={<i className="fas fa-file-contract text-emerald-300"></i>} label="Surat Bebas Pustaka" id="surat_bebas" />
                                 </>
                             )}
-                            {cU.role !== 'petugas' && <NI icon={<i className="fas fa-calendar-check"></i>} label="Daftar Hadir" id="hadir" />}
-                            <NI icon={<i className="fas fa-search"></i>} label="Cari Buku" id="cari" />
+                            {cU.role !== 'petugas' && <NI icon={<i className="fas fa-calendar-check text-emerald-400"></i>} label="Daftar Hadir" id="hadir" />}
+                            <NI icon={<i className="fas fa-search text-blue-300"></i>} label="Cari Buku" id="cari" />
                         </nav>
                         <div className="p-4 border-t border-white/10 flex flex-col gap-2">
                             {!iKL && (
                                 <button onClick={hLo} className="flex items-center justify-center w-full px-4 py-3.5 text-white/80 hover:text-white rounded-2xl hover:bg-white/10 transition-all group">
-                                    <div className="text-xl w-6 text-center group-hover:-translate-x-1"><i className="fas fa-sign-out-alt"></i></div>
-                                    {iSO && <span className="ml-3 font-bold">Keluar</span>}
+                                    <div className="text-xl w-6 text-center group-hover:-translate-x-1"><i className="fas fa-sign-out-alt text-rose-400"></i></div>
+                                    {iSO && <span className="ml-3 font-bold text-rose-100 group-hover:text-rose-400 transition-colors">Keluar</span>}
                                 </button>
                             )}
                         </div>
@@ -3913,6 +4465,7 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                                 {aT === 'pinjam' && <PinjamView data={peminjaman} anggota={anggota} buku={buku} sekolah={sekolah} onAdd={d => aD('peminjaman', d)} onUpdate={(i, d) => uD('peminjaman', i, d)} onDelete={i => dD('peminjaman', i)} onUpdateBuku={uD} showAlert={sA} showConfirm={sC} />}
                                 {aT === 'peringatan' && <PeringatanView peminjaman={peminjaman} anggota={anggota} sekolah={sekolah} onUpdatePengaturan={uS} showConfirm={sC} showAlert={sA} />}
                                 {aT === 'kembali' && <KembaliView data={peminjaman} onUpdate={(i, d) => uD('peminjaman', i, d)} onUpdateBuku={uD} buku={buku} showAlert={sA} showConfirm={sC} sekolah={sekolah} onUpdatePengaturan={uS} />}
+                                {aT === 'kembali_paket' && <KembaliPaketView data={peminjaman} anggota={anggota} buku={buku} onUpdate={(i, d) => uD('peminjaman', i, d)} onUpdateBuku={uD} showAlert={sA} showConfirm={sC} sekolah={sekolah} />}
                                 {aT === 'buku_hilang' && <BukuHilangView data={peminjaman} anggota={anggota} buku={buku} onUpdate={(i, d) => uD('peminjaman', i, d)} onUpdateBuku={uD} onPrintHilang={items => { setPHilangItems(items); hP('label_hilang'); }} showAlert={sA} showConfirm={sC} />}
                                 {aT === 'rekap' && <RekapView kehadiran={kehadiran} peminjaman={peminjaman} anggota={anggota} onPrint={hP} filter={fR} setFilter={setFR} sekolah={sekolah} />}
                                 {aT === 'rekap_paket' && <RekapPaketView anggota={anggota} peminjaman={peminjaman} onPrint={hP} filter={fP} setFilter={setFP} sekolah={sekolah} />}
