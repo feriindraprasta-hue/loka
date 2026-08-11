@@ -2888,6 +2888,9 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
     const [sQ, setSQ] = useState(''), [sD, setSD] = useState(false), [sA, setSA] = useState(null), [sL, setSL] = useState(null), [iE, setIE] = useState(false), [eF, setEF] = useState({ tglPinjam: '', tglHarusKembali: '' });
     
     const [searchBerjalan, setSearchBerjalan] = useState('');
+    
+    // STATE BARU UNTUK SPLASH SCREEN (POPUP SUKSES 2 DETIK)
+    const [showSplash, setShowSplash] = useState(false);
 
     const identitasRef = useRef(null);
     useEffect(() => {
@@ -2965,11 +2968,23 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
 
         if (parseInt(b.stock || 0) < 1) return showAlert("Gagal", "Stok habis!", "warning", cbFocus);
         
-        const iED = dTransaksi.some(l => l?.status === 'Dipinjam' && l?.kodeEksemplar && String(l.kodeEksemplar).replace(/\s+/g, '').toUpperCase() === scanS);
-        if (iED) {
+        // MODIFIKASI 2: Deteksi buku dipinjam & tampilkan Nama/Kelas
+        const activeLoan = dTransaksi.find(l => l?.status === 'Dipinjam' && l?.kodeEksemplar && String(l.kodeEksemplar).replace(/\s+/g, '').toUpperCase() === scanS);
+        if (activeLoan) {
             setF({ ...f, kodeEksemplar: '' }); 
             if (inputEl) inputEl.value = '';
-            return showAlert("Gagal", `Eksemplar dengan Barcode [ ${rawScan} ] saat ini sedang dipinjam!`, "error", cbFocus);
+            
+            // Cari data peminjam saat ini
+            const borrower = dAnggota.find(a => a.id === activeLoan.idAnggota);
+            const borrowerName = borrower ? borrower.nama : 'Tidak diketahui';
+            const borrowerClass = borrower ? (borrower.kategori === 'Siswa' ? formatKelasSiswa(borrower, sekolah?.daftarJurusan) : borrower.kategori) : '-';
+            
+            return showAlert(
+                "Gagal", 
+                `Eksemplar Barcode [ ${rawScan} ] saat ini sedang dipinjam oleh:\n\n${borrowerName}\n(${borrowerClass})`, 
+                "error", 
+                cbFocus
+            );
         }
 
         const hHilang = dTransaksi.some(l => l?.idAnggota === sA.id && l?.status === 'Hilang');
@@ -2994,7 +3009,13 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         
         setF({ ...f, kodeEksemplar: '' });
         if (inputEl) inputEl.value = ''; 
-        showAlert('Berhasil', "Sirkulasi dicatat!", 'success', cbFocus);
+        
+        // MODIFIKASI 1: Tampilkan Splash Screen sukses selama 2 detik lalu auto-close
+        setShowSplash(true);
+        setTimeout(() => {
+            setShowSplash(false);
+            cbFocus();
+        }, 2000);
     };
 
     const oM = l => { setSL(l); setEF({ tglPinjam: l.tglPinjam, tglHarusKembali: l.tglHarusKembali }); setIE(false); };
@@ -3131,6 +3152,19 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     </table>
                 </div>
             </div>
+
+            {/* SPLASH SCREEN KHUSUS BERHASIL (Auto-Dismiss) */}
+            {showSplash && (
+                <div className="fixed inset-0 bg-slate-900/40 z-[99999] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl p-8 max-w-[280px] w-full text-center shadow-2xl animate-[zoomIn_0.2s_ease-out]">
+                        <div className="w-16 h-16 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg shadow-emerald-200">
+                            <i className="fas fa-check"></i>
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 mb-1">Berhasil</h3>
+                        <p className="text-sm font-medium text-slate-400">Sirkulasi dicatat!</p>
+                    </div>
+                </div>
+            )}
 
             {sL && (
                 <div className="fixed inset-0 bg-slate-900/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setSL(null)}>
