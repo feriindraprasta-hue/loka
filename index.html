@@ -1745,174 +1745,210 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
                 </div>
             );
         };
-const AuditEksemplarView = ({ buku, peminjaman, onPrintSisa }) => {
-            const [search, setSearch] = useState('');
-            const [selectedBook, setSelectedBook] = useState(null);
+const AuditEksemplarView = ({ buku, peminjaman, anggota, sekolah, onPrintSisa }) => {
+    const [search, setSearch] = useState('');
+    const [selectedBook, setSelectedBook] = useState(null);
 
-            // Filter buku untuk pencarian
-            const filteredBuku = useMemo(() => {
-                if (!search) return buku.slice(0, 10); 
-                return buku.filter(b => 
-                    b.status !== 'Direduksi' && 
-                    (b.judul.toLowerCase().includes(search.toLowerCase()) || 
-                    (b.isbn && b.isbn.includes(search)) || 
-                    (b.noInduk && b.noInduk.toLowerCase().includes(search.toLowerCase())))
-                ).slice(0, 20);
-            }, [buku, search]);
+    // --- FUNGSI BANTUAN UNTUK MENGHITUNG STOK REAL (DITAMBAH HITUNGAN PINJAM) ---
+    const getRealStock = (bukuItem) => {
+        const activeLoansCount = peminjaman.filter(p => p.idBuku === bukuItem.id && p.status === 'Dipinjam').length;
+        let awal = parseInt(bukuItem.stockAwal);
+        if (isNaN(awal) || awal <= 0) {
+            awal = (parseInt(bukuItem.stock) || 0) + activeLoansCount;
+        }
+        awal = Math.min(awal, 5000); // Batas aman anti-crash (Maksimal 5000 eksemplar/buku)
+        const sisa = Math.max(0, awal - activeLoansCount);
+        return { awal, sisa, pinjam: activeLoansCount }; // Menyimpan jumlah yang dipinjam
+    };
 
-            // LOGIKA PINTAR AUDIT EKSEMPLAR (MENGGUNAKAN STOK AWAL)
-            const detailEksemplar = useMemo(() => {
-                if (!selectedBook) return null;
-                
-                // 1. Dapatkan semua peminjaman aktif untuk buku ini
-                const activeLoans = peminjaman.filter(p => p.idBuku === selectedBook.id && p.status === 'Dipinjam');
-                
-                // 2. Ekstrak nomor eksemplar yang sedang dipinjam
-                const borrowedCopies = activeLoans.map(loan => {
-                    const parts = (loan.kodeEksemplar || '').split('-');
-                    return parseInt(parts[parts.length - 1]) || 1;
-                });
+    // Filter buku untuk pencarian (DENGAN PENGAMAN ANTI-CRASH JUDUL KOSONG)
+    const filteredBuku = useMemo(() => {
+        if (!search) return buku.slice(0, 10); 
+        const searchLower = search.toLowerCase();
+        return buku.filter(b => 
+            b.status !== 'Direduksi' && 
+            ((b.judul || '').toLowerCase().includes(searchLower) || 
+            (b.isbn || '').toLowerCase().includes(searchLower) || 
+            (b.noInduk || '').toLowerCase().includes(searchLower))
+        ).slice(0, 20);
+    }, [buku, search]);
 
-                // 3. Ambil Total Fisik Sebenarnya dari "Stok Awal"
-                // (Fallback ke perhitungan lama jika buku lama belum di-edit stok awalnya)
-                const totalFisik = parseInt(selectedBook.stockAwal) || ((parseInt(selectedBook.stock) || 0) + activeLoans.length);
-                
-                // 4. Cari eksemplar yang tersedia (dari 1 sampai Total Fisik)
-                const availableCopies = [];
-                for (let i = 1; i <= totalFisik; i++) {
-                    if (!borrowedCopies.includes(i)) {
-                        availableCopies.push(i);
-                    }
-                }
+    // LOGIKA PINTAR AUDIT EKSEMPLAR
+    const detailEksemplar = useMemo(() => {
+        if (!selectedBook) return null;
+        
+        const activeLoans = peminjaman.filter(p => p.idBuku === selectedBook.id && p.status === 'Dipinjam');
+        
+        const borrowedCopies = activeLoans.map(loan => {
+            const parts = (loan.kodeEksemplar || '').split('-');
+            return parseInt(parts[parts.length - 1]) || 1;
+        });
 
-                return { 
-                    borrowed: borrowedCopies, 
-                    available: availableCopies, 
-                    loans: activeLoans,
-                    tersedia: availableCopies.length, // Sisa real di rak berdasarkan perhitungan
-                    totalFisik: totalFisik
-                };
-            }, [selectedBook, peminjaman]);
+        const stockData = getRealStock(selectedBook);
+        
+        const availableCopies = [];
+        for (let i = 1; i <= stockData.awal; i++) {
+            if (!borrowedCopies.includes(i)) {
+                availableCopies.push(i);
+            }
+        }
 
-            const handlePrintAvailable = () => {
-                if (!selectedBook || !detailEksemplar) return;
-                
-                const sL = [selectedBook.kodeLabel ? selectedBook.kodeLabel : getDDC(selectedBook.klasifikasiDDC), getAuthorCode(selectedBook.pengarang), getTitleCode(selectedBook.judul)].filter(Boolean);
-                
-                const itemsToPrint = detailEksemplar.available.map(copyNum => ({
-                    ...selectedBook,
-                    copyNum: copyNum,
-                    totalCopies: detailEksemplar.totalFisik,
-                    spineCallNumber: [...sL, selectedBook.lokasiRak ? selectedBook.lokasiRak : `c.${copyNum}`].join('\n')
-                }));
+        return { 
+            borrowed: borrowedCopies, 
+            available: availableCopies, 
+            loans: activeLoans,
+            tersedia: availableCopies.length, 
+            totalFisik: stockData.awal
+        };
+    }, [selectedBook, peminjaman]);
 
-                onPrintSisa(itemsToPrint);
-            };
+    const handlePrintAvailable = () => {
+        if (!selectedBook || !detailEksemplar) return;
+        
+        const sL = [selectedBook.kodeLabel ? selectedBook.kodeLabel : getDDC(selectedBook.klasifikasiDDC), getAuthorCode(selectedBook.pengarang), getTitleCode(selectedBook.judul)].filter(Boolean);
+        
+        const itemsToPrint = detailEksemplar.available.map(copyNum => ({
+            ...selectedBook,
+            copyNum: copyNum,
+            totalCopies: detailEksemplar.totalFisik,
+            spineCallNumber: [...sL, selectedBook.lokasiRak ? selectedBook.lokasiRak : `c.${copyNum}`].join('\n')
+        }));
 
-            return (
-                <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden min-h-[75vh] flex flex-col">
-                    <div className="p-8 md:p-10 border-b bg-gradient-to-r from-teal-50 to-emerald-50">
-                        <h2 className="text-3xl font-black text-teal-900 mb-3"><i className="fas fa-clipboard-check text-teal-500 mr-3"></i> Audit & Cek Sisa Eksemplar</h2>
-                        <p className="text-slate-600 font-medium">Lacak urutan buku paket/koleksi yang belum terpinjam dan cetak barcodenya kembali jika hilang/rusak.</p>
+        onPrintSisa(itemsToPrint);
+    };
+
+    return (
+        <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden min-h-[75vh] flex flex-col">
+            <div className="p-8 md:p-10 border-b bg-gradient-to-r from-teal-50 to-emerald-50">
+                <h2 className="text-3xl font-black text-teal-900 mb-3"><i className="fas fa-clipboard-check text-teal-500 mr-3"></i> Audit & Cek Sisa Eksemplar</h2>
+                <p className="text-slate-600 font-medium">Lacak urutan buku paket/koleksi yang belum terpinjam dan cetak barcodenya kembali jika hilang/rusak.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-0 flex-1">
+                {/* Kiri: Pencarian Buku */}
+                <div className="p-8 border-r border-slate-100 flex flex-col h-[500px]">
+                    <div className="relative mb-6 shrink-0">
+                        <i className="fas fa-search absolute left-4 top-3.5 text-teal-400"></i>
+                        <input type="text" placeholder="Cari Judul, ISBN, atau No Induk..." className="w-full bg-slate-50 border border-slate-200 pl-11 pr-4 py-3 rounded-xl font-bold focus:ring-2 focus:ring-teal-200" value={search} onChange={e => setSearch(e.target.value)} autoFocus />
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-0 flex-1">
-                        {/* Kiri: Pencarian Buku */}
-                        <div className="p-8 border-r border-slate-100 flex flex-col h-[500px]">
-                            <div className="relative mb-6 shrink-0">
-                                <i className="fas fa-search absolute left-4 top-3.5 text-teal-400"></i>
-                                <input type="text" placeholder="Cari Judul, ISBN, atau No Induk..." className="w-full bg-slate-50 border border-slate-200 pl-11 pr-4 py-3 rounded-xl font-bold focus:ring-2 focus:ring-teal-200" value={search} onChange={e => setSearch(e.target.value)} autoFocus />
-                            </div>
-                            
-                            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
-                                {filteredBuku.map(b => (
-                                    <div key={b.id} onClick={() => setSelectedBook(b)} className={`p-4 rounded-xl border cursor-pointer transition-all flex gap-4 items-center ${selectedBook?.id === b.id ? 'bg-teal-50 border-teal-400 shadow-sm' : 'bg-white border-slate-100 hover:border-teal-200 hover:bg-slate-50'}`}>
-                                        <div className="w-12 h-16 bg-slate-200 rounded shrink-0 overflow-hidden border border-slate-200">
-                                            {b.cover ? <img src={b.cover} className="w-full h-full object-cover" alt="Cover"/> : <div className="w-full h-full flex items-center justify-center text-slate-400"><i className="fas fa-book"></i></div>}
-                                        </div>
-                                        <div className="flex-1">
-                                            <h4 className="font-bold text-slate-800 line-clamp-2 leading-tight">{b.judul}</h4>
-                                            <p className="text-xs font-mono text-slate-500 mt-1">{b.isbn || b.noInduk}</p>
-                                        </div>
-                                        <div className="text-center shrink-0">
-                                            <span className="block text-[10px] text-slate-400 font-bold uppercase mb-0.5">Sisa / Awal</span>
-                                            <span className="bg-slate-100 text-slate-700 font-black px-2 py-1 rounded text-xs">{b.stock} / {b.stockAwal || b.stock}</span>
-                                        </div>
+                    
+                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
+                        {filteredBuku.map(b => {
+                            // --- SINKRONISASI STOK KIRI DAN KANAN ---
+                            const stockData = getRealStock(b);
+                            return (
+                                <div key={b.id} onClick={() => setSelectedBook(b)} className={`p-4 rounded-xl border cursor-pointer transition-all flex gap-4 items-center ${selectedBook?.id === b.id ? 'bg-teal-50 border-teal-400 shadow-sm' : 'bg-white border-slate-100 hover:border-teal-200 hover:bg-slate-50'}`}>
+                                    <div className="w-12 h-16 bg-slate-200 rounded shrink-0 overflow-hidden border border-slate-200">
+                                        {b.cover ? <img src={b.cover} className="w-full h-full object-cover" alt="Cover"/> : <div className="w-full h-full flex items-center justify-center text-slate-400"><i className="fas fa-book"></i></div>}
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Kanan: Detail Eksemplar */}
-                        <div className="p-8 bg-slate-50/50 flex flex-col h-[500px]">
-                            {selectedBook ? (
-                                <div className="flex flex-col h-full">
-                                    <h3 className="text-xl font-black text-slate-800 mb-1 leading-tight">{selectedBook.judul}</h3>
-                                    
-                                    {/* INFO TOTAL FISIK KESELURUHAN (DIPERBAIKI MENGGUNAKAN STOK AWAL) */}
-                                    <div className="flex flex-wrap gap-4 text-sm text-slate-600 font-bold mb-6 border-b border-slate-200 pb-4 mt-2">
-                                        <span><i className="fas fa-barcode mr-1.5"></i> {selectedBook.isbn || selectedBook.noInduk}</span>
-                                        <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md"><i className="fas fa-layer-group mr-1.5"></i> Total Fisik: {detailEksemplar.totalFisik}</span>
+                                    <div className="flex-1">
+                                        <h4 className="font-bold text-slate-800 line-clamp-2 leading-tight">{b.judul}</h4>
+                                        <p className="text-xs font-mono text-slate-500 mt-1">{b.isbn || b.noInduk}</p>
                                     </div>
-
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                        <div className="mb-6">
-                                            <div className="flex justify-between items-center mb-3">
-                                                <h4 className="font-bold text-emerald-600 flex items-center"><i className="fas fa-check-circle mr-2"></i>Tersedia di Rak ({detailEksemplar.tersedia})</h4>
-                                                {detailEksemplar.available.length > 0 && (
-                                                    <button onClick={handlePrintAvailable} className="bg-emerald-50 text-emerald-600 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-500 hover:text-white transition-colors">
-                                                        <i className="fas fa-print mr-1"></i> Cetak Label
-                                                    </button>
-                                                )}
-                                            </div>
-                                            {detailEksemplar.available.length === 0 ? (
-                                                <p className="text-xs font-bold text-slate-400 bg-slate-100 p-3 rounded-xl">Semua buku sedang dipinjam.</p>
-                                            ) : (
-                                                <div className="flex flex-wrap gap-2">
-                                                    {detailEksemplar.available.map(num => (
-                                                        <span key={num} className="bg-emerald-100 border border-emerald-300 text-emerald-800 px-3 py-1.5 rounded-lg text-sm font-black shadow-sm">
-                                                            Eks. {num}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div>
-                                            <h4 className="font-bold text-rose-600 flex items-center mb-3"><i className="fas fa-hand-holding-box mr-2"></i>Sedang Dipinjam ({detailEksemplar.loans.length})</h4>
-                                            {detailEksemplar.loans.length === 0 ? (
-                                                <p className="text-xs font-bold text-slate-400 bg-slate-100 p-3 rounded-xl">Belum ada yang meminjam buku ini.</p>
-                                            ) : (
-                                                <div className="space-y-2">
-                                                    {detailEksemplar.loans.map(loan => {
-                                                        const parts = (loan.kodeEksemplar || '').split('-');
-                                                        const num = parseInt(parts[parts.length - 1]) || '?';
-                                                        return (
-                                                            <div key={loan.id} className="flex justify-between items-center bg-white border border-rose-100 p-3 rounded-xl shadow-sm">
-                                                                <div>
-                                                                    <span className="bg-rose-100 text-rose-700 font-black px-2 py-0.5 rounded text-xs mr-2">Eks. {num}</span>
-                                                                    <span className="font-bold text-slate-700 text-sm">{loan.namaPeminjam}</span>
-                                                                </div>
-                                                                <span className="text-[10px] font-bold text-slate-400">{loan.tglPinjam}</span>
-                                                            </div>
-                                                        )
-                                                    })}
-                                                </div>
-                                            )}
+                                    <div className="text-center shrink-0 ml-1">
+                                        <span className="block text-[9px] text-slate-400 font-bold uppercase mb-1 tracking-wider">Awal / Pjm / Sisa</span>
+                                        <div className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 flex items-center justify-center gap-1.5 text-[11px] font-black shadow-sm">
+                                            <span className="text-slate-600" title="Stok Awal">{stockData.awal}</span>
+                                            <span className="text-slate-300">/</span>
+                                            <span className="text-rose-500" title="Sedang Dipinjam">{stockData.pinjam}</span>
+                                            <span className="text-slate-300">/</span>
+                                            <span className="text-emerald-600" title="Sisa di Rak">{stockData.sisa}</span>
                                         </div>
                                     </div>
                                 </div>
-                            ) : (
-                                <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
-                                    <i className="fas fa-hand-pointer text-5xl mb-4 opacity-50"></i>
-                                    <p className="font-bold text-sm">Pilih buku di sebelah kiri untuk melihat detail eksemplar.</p>
-                                </div>
-                            )}
-                        </div>
+                            );
+                        })}
                     </div>
                 </div>
-            );
-        };
+
+                {/* Kanan: Detail Eksemplar */}
+                <div className="p-8 bg-slate-50/50 flex flex-col h-[500px]">
+                    {selectedBook ? (
+                        <div className="flex flex-col h-full">
+                            <h3 className="text-xl font-black text-slate-800 mb-1 leading-tight">{selectedBook.judul}</h3>
+                            
+                            <div className="flex flex-wrap gap-4 text-sm text-slate-600 font-bold mb-6 border-b border-slate-200 pb-4 mt-2">
+                                <span><i className="fas fa-barcode mr-1.5"></i> {selectedBook.isbn || selectedBook.noInduk}</span>
+                                <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md"><i className="fas fa-layer-group mr-1.5"></i> Total Fisik: {detailEksemplar.totalFisik}</span>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                <div className="mb-6">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h4 className="font-bold text-emerald-600 flex items-center"><i className="fas fa-check-circle mr-2"></i>Tersedia di Rak ({detailEksemplar.tersedia})</h4>
+                                        {detailEksemplar.available.length > 0 && (
+                                            <button onClick={handlePrintAvailable} className="bg-emerald-50 text-emerald-600 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-500 hover:text-white transition-colors">
+                                                <i className="fas fa-print mr-1"></i> Cetak Label
+                                            </button>
+                                        )}
+                                    </div>
+                                    {detailEksemplar.available.length === 0 ? (
+                                        <p className="text-xs font-bold text-slate-400 bg-slate-100 p-3 rounded-xl">Semua buku sedang dipinjam.</p>
+                                    ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                            {detailEksemplar.available.map(num => (
+                                                <span key={num} className="bg-emerald-100 border border-emerald-300 text-emerald-800 px-3 py-1.5 rounded-lg text-sm font-black shadow-sm">
+                                                    Eks. {num}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <h4 className="font-bold text-rose-600 flex items-center mb-3"><i className="fas fa-hand-holding-box mr-2"></i>Sedang Dipinjam ({detailEksemplar.loans.length})</h4>
+                                    {detailEksemplar.loans.length === 0 ? (
+                                        <p className="text-xs font-bold text-slate-400 bg-slate-100 p-3 rounded-xl">Belum ada yang meminjam buku ini.</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {detailEksemplar.loans.map(loan => {
+                                                const parts = (loan.kodeEksemplar || '').split('-');
+                                                const num = parseInt(parts[parts.length - 1]) || '?';
+                                                
+                                                // --- MENGAMBIL INFORMASI KELAS/STATUS ---
+                                                const borrower = anggota?.find(a => a.id === loan.idAnggota);
+                                                let borrowerInfo = '-';
+                                                
+                                                if (borrower) {
+                                                    if (borrower.kategori === 'Siswa') {
+                                                        borrowerInfo = typeof formatKelasSiswa === 'function' ? formatKelasSiswa(borrower, sekolah?.daftarJurusan) : `${borrower.kelas || ''} ${borrower.jurusan || ''}`.trim();
+                                                    } else {
+                                                        borrowerInfo = borrower.kategori;
+                                                    }
+                                                }
+
+                                                return (
+                                                    <div key={loan.id} className="flex justify-between items-center bg-white border border-rose-100 p-3 rounded-xl shadow-sm">
+                                                        <div className="flex flex-col">
+                                                            <div className="flex items-center">
+                                                                <span className="bg-rose-100 text-rose-700 font-black px-2 py-0.5 rounded text-xs mr-2">Eks. {num}</span>
+                                                                <span className="font-bold text-slate-700 text-sm">{loan.namaPeminjam}</span>
+                                                            </div>
+                                                            <span className="text-[10px] font-bold text-rose-500 uppercase tracking-widest mt-1">
+                                                                {borrowerInfo}
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-[10px] font-bold text-slate-400">{loan.tglPinjam}</span>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+                            <i className="fas fa-hand-pointer text-5xl mb-4 opacity-50"></i>
+                            <p className="font-bold text-sm">Pilih buku di sebelah kiri untuk melihat detail eksemplar.</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
         const DashboardView = ({ anggota, buku, peminjaman, kehadiran, sekolah, onUserClick }) => {
             const [sB, setSB] = useState(null);
             const aL = peminjaman.filter(p => p.status === 'Dipinjam').length;
@@ -2501,7 +2537,8 @@ const AuditEksemplarView = ({ buku, peminjaman, onPrintSisa }) => {
 };
 
 const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert }) => {
-    const iF = { judul: '', anakJudul: '', pengarang: '', penerbit: '', kotaTerbit: '', tahun: '', deskripsiFisik: '', isbn: '', subjek: '', klasifikasiDDC: '000 - Komputer, Informasi, dan Karya Umum', kodeLabel: '', sinopsis: '', cover: '', noInduk: '', lokasiRak: '', sumberPerolehan: 'BOSP', stock: 1, stockAwal: 1, tglMasuk: new Date().toISOString().split('T')[0] };
+    // --- PERBAIKAN: Menambahkan hargaSatuan ---
+    const iF = { judul: '', anakJudul: '', pengarang: '', penerbit: '', kotaTerbit: '', tahun: '', deskripsiFisik: '', isbn: '', subjek: '', klasifikasiDDC: '000 - Komputer, Informasi, dan Karya Umum', kodeLabel: '', sinopsis: '', cover: '', noInduk: '', lokasiRak: '', sumberPerolehan: 'BOSP', stock: 1, stockAwal: 1, hargaSatuan: 0, tglMasuk: new Date().toISOString().split('T')[0] };
     
     const [io, setIo] = useState(false), [eId, setEId] = useState(null), [f, setF] = useState(''), [fm, setFm] = useState(iF), [aT, setAT] = useState('metadata');
     const [rM, setRM] = useState({ is: false, b: null, alasan: '', tgl: new Date().toISOString().split('T')[0] });
@@ -2548,6 +2585,7 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
             "Deskripsi Fisik": b.deskripsiFisik || '', "Subjek": b.subjek || '', "Sumber Pengadaan": b.sumberPerolehan || '',
             "Klasifikasi DDC": b.klasifikasiDDC || '', "Kode Label": b.kodeLabel || '', "Tanggal Masuk": b.tglMasuk || '',
             "Sinopsis": b.sinopsis || '', "Rak": b.lokasiRak || '', 
+            "Harga Satuan": b.hargaSatuan || 0, // --- PERBAIKAN: Menambahkan Ekspor Harga Satuan ---
             "Stok Awal": getTrueStockAwal(b), 
             "Stok Tersedia": b.stock || 0
         })));
@@ -2589,6 +2627,7 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
                             klasifikasiDDC: rw["Klasifikasi DDC"]?.toString() || '000 - Komputer, Informasi, dan Karya Umum',
                             kodeLabel: rw["Kode Label"]?.toString() || '', tglMasuk: rw["Tanggal Masuk"]?.toString() || new Date().toISOString().split('T')[0],
                             sinopsis: rw["Sinopsis"]?.toString() || '', lokasiRak: rw["Rak"]?.toString() || '',
+                            hargaSatuan: parseInt(rw["Harga Satuan"] || rw["Harga"]) || 0, // --- PERBAIKAN: Menambahkan Impor Harga Satuan ---
                             stockAwal: parseInt(rw["Stok Awal"] || rw["Stok"] || rw["Stock"]) || 1, 
                             stock: parseInt(rw["Stok Tersedia"] || rw["Stok"] || rw["Stock"]) || 1, status: 'Aktif'
                         });
@@ -2711,7 +2750,7 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
             </div>
 
             {io && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[99] flex items-center justify-center p-4">
                     <div className="bg-white rounded-[2rem] w-full max-w-4xl max-h-[90vh] flex flex-col relative shadow-2xl animate-[bounceIn_0.3s_ease-out]">
                         <div className="p-4 md:p-8 border-b flex justify-between items-center bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-50 via-white to-white rounded-t-[2rem]">
                             <h3 className="text-2xl font-black text-indigo-950">{eId ? 'Edit' : 'Tambah'} Buku</h3>
@@ -2768,14 +2807,24 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
                             </div>
                             
                             <div className={aT === 'inventaris' ? 'block space-y-6' : 'hidden'}>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* --- PERBAIKAN: Penambahan Kolom Harga Satuan --- */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <Input label="Kode Barcode / No Induk" value={fm.noInduk} onChange={e => setFm({ ...fm, noInduk: e.target.value })} required={true} />
                                     <Input label="Rak / Lokasi Penyimpanan" value={fm.lokasiRak} onChange={e => setFm({ ...fm, lokasiRak: e.target.value })} />
+                                    <Input label="Harga Satuan (Rp)" type="number" value={fm.hargaSatuan || ''} onChange={e => setFm({ ...fm, hargaSatuan: parseInt(e.target.value) || 0 })} placeholder="0" />
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-slate-50 rounded-2xl border border-slate-100 mt-6">
                                     <div className="relative">
-                                        <Input label="Stok Awal (Keseluruhan)" type="number" value={fm.stockAwal === undefined ? fm.stock : fm.stockAwal} onChange={e => setFm({ ...fm, stockAwal: parseInt(e.target.value) || 0 })} required={true} />
-                                        <p className="text-[10px] font-bold text-slate-400 mt-2 ml-1">Total fisik buku saat pertama kali diterima.</p>
+                                        {/* --- PERBAIKAN: Logika Dinamis Untuk Mengubah Stock Otomatis Saat Stock Awal Diubah --- */}
+                                        <Input label="Stok Awal (Keseluruhan)" type="number" value={fm.stockAwal === undefined ? fm.stock : fm.stockAwal} 
+                                            onChange={e => {
+                                                const newAwal = parseInt(e.target.value) || 0;
+                                                const activeL = eId ? peminjaman.filter(p => p.idBuku === eId && p.status === 'Dipinjam').length : 0;
+                                                setFm({ ...fm, stockAwal: newAwal, stock: Math.max(0, newAwal - activeL) });
+                                            }} 
+                                            required={true} 
+                                        />
+                                        <p className="text-[10px] font-bold text-slate-400 mt-2 ml-1">Ubah angka ini, Stok Tersedia akan menyesuaikan otomatis.</p>
                                     </div>
                                     <div className="relative">
                                         <Input label="Stok Tersedia (Saat Ini)" type="number" value={fm.stock} onChange={e => setFm({ ...fm, stock: parseInt(e.target.value) || 0 })} required={true} />
@@ -2991,9 +3040,10 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
     const [sQ, setSQ] = useState(''), [sD, setSD] = useState(false), [sA, setSA] = useState(null), [sL, setSL] = useState(null), [iE, setIE] = useState(false), [eF, setEF] = useState({ tglPinjam: '', tglHarusKembali: '' });
     
     const [searchBerjalan, setSearchBerjalan] = useState('');
-    
-    // STATE BARU UNTUK SPLASH SCREEN (POPUP SUKSES 2 DETIK)
     const [showSplash, setShowSplash] = useState(false);
+    
+    // --- STATE BARU UNTUK WARNING NAMA KOSONG ---
+    const [showEmptyWarning, setShowEmptyWarning] = useState(false);
 
     const identitasRef = useRef(null);
     useEffect(() => {
@@ -3002,24 +3052,70 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         }, 100);
     }, []);
 
+    // --- FUNGSI ESCAPE UNTUK MENUTUP WARNING ---
+    useEffect(() => {
+        const handleEsc = (e) => {
+            if (showEmptyWarning && e.key === 'Escape') {
+                setShowEmptyWarning(false);
+                setTimeout(() => identitasRef.current?.focus(), 100);
+            }
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [showEmptyWarning]);
+
     const dAnggota = anggota || [];
     const dBuku = buku || [];
     const dTransaksi = data || [];
 
+    // --- LOGIKA PENCARIAN & PENGAMAN BUG NAMA KOSONG ---
     const hSC = e => { 
-        const vRaw = e.target.value; setSQ(vRaw); setSD(true); 
+        const vRaw = e.target.value; 
+        
+        // 1. Cek Jika Kotak Dikosongkan (Backspace sampai habis)
+        if (vRaw === '') {
+            setSQ('');
+            setSD(false);
+            setShowEmptyWarning(true); // Munculkan peringatan
+            
+            // Auto close dalam 1. detik
+            setTimeout(() => {
+                setShowEmptyWarning(prev => {
+                    if (prev) {
+                        setTimeout(() => identitasRef.current?.focus(), 50); // Fokus kembali
+                    }
+                    return false;
+                });
+            }, 1200);
+            return;
+        }
+
+        setSQ(vRaw); 
+        setSD(true); 
         const vClean = String(vRaw).replace(/[\s\*]+/g, '').toUpperCase();
         
+        // Pengaman tambahan agar tidak error saat vClean kosong
+        if (!vClean) return;
+
         const em = dAnggota.find(a => {
             if (a?.status !== 'Aktif') return false;
             const oId = String(a?.id || '').replace(/\s+/g, '').toUpperCase();
             const oNisn = String(a?.nisn || '').replace(/\s+/g, '').toUpperCase();
             
-            return oId === vClean || oNisn === vClean || 
-                   getShortBarcode(oId) === vClean || getShortBarcode(oNisn) === vClean;
+            // 2. Mencegah error kecocokan dengan NISN yang kosong di Database
+            return (oId && oId === vClean) || 
+                   (oNisn && oNisn === vClean) || 
+                   (oId && getShortBarcode(oId) === vClean) || 
+                   (oNisn && getShortBarcode(oNisn) === vClean);
         }); 
         
-        if (em) { setSA(em); setF(p => ({ ...p, idA: em.id })); setSQ(''); setSD(false); setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100); } 
+        if (em) { 
+            setSA(em); 
+            setF(p => ({ ...p, idA: em.id })); 
+            setSQ(''); 
+            setSD(false); 
+            setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100); 
+        } 
     };
 
     const fA = sQ.length > 1 ? dAnggota.filter(a => a?.status === 'Aktif' && ((a?.nama && String(a.nama).toLowerCase().includes(sQ.toLowerCase())) || (a?.nisn && String(a.nisn).toLowerCase().includes(sQ.toLowerCase())))) : [];
@@ -3071,13 +3167,11 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
 
         if (parseInt(b.stock || 0) < 1) return showAlert("Gagal", "Stok habis!", "warning", cbFocus);
         
-        // MODIFIKASI 2: Deteksi buku dipinjam & tampilkan Nama/Kelas
         const activeLoan = dTransaksi.find(l => l?.status === 'Dipinjam' && l?.kodeEksemplar && String(l.kodeEksemplar).replace(/\s+/g, '').toUpperCase() === scanS);
         if (activeLoan) {
             setF({ ...f, kodeEksemplar: '' }); 
             if (inputEl) inputEl.value = '';
             
-            // Cari data peminjam saat ini
             const borrower = dAnggota.find(a => a.id === activeLoan.idAnggota);
             const borrowerName = borrower ? borrower.nama : 'Tidak diketahui';
             const borrowerClass = borrower ? (borrower.kategori === 'Siswa' ? formatKelasSiswa(borrower, sekolah?.daftarJurusan) : borrower.kategori) : '-';
@@ -3113,12 +3207,11 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
         setF({ ...f, kodeEksemplar: '' });
         if (inputEl) inputEl.value = ''; 
         
-        // MODIFIKASI 1: Tampilkan Splash Screen sukses selama 2 detik lalu auto-close
         setShowSplash(true);
         setTimeout(() => {
             setShowSplash(false);
             cbFocus();
-        }, 2000);
+        }, 1000);
     };
 
     const oM = l => { setSL(l); setEF({ tglPinjam: l.tglPinjam, tglHarusKembali: l.tglHarusKembali }); setIE(false); };
@@ -3265,6 +3358,20 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                         </div>
                         <h3 className="text-xl font-black text-slate-800 mb-1">Berhasil</h3>
                         <p className="text-sm font-medium text-slate-400">Sirkulasi dicatat!</p>
+                    </div>
+                </div>
+            )}
+
+            {/* SPLASH SCREEN KHUSUS PERINGATAN KOSONG (Auto-Dismiss 1.5s / ESC) */}
+            {showEmptyWarning && (
+                <div className="fixed inset-0 bg-slate-900/40 z-[99999] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl p-8 max-w-[300px] w-full text-center shadow-2xl animate-[zoomIn_0.2s_ease-out]">
+                        <div className="w-16 h-16 bg-amber-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg shadow-amber-200">
+                            <i className="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 mb-2">Peringatan</h3>
+                        <p className="text-sm font-medium text-slate-500">Silakan input nama terlebih dahulu.</p>
+                        <p className="text-[10px] font-bold text-slate-400 mt-4">(Tekan ESC untuk menutup)</p>
                     </div>
                 </div>
             )}
@@ -4593,7 +4700,7 @@ const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAle
                                 {aT === 'dashboard' && <DashboardView anggota={anggota} buku={buku} peminjaman={peminjaman} kehadiran={kehadiran} sekolah={sekolah} onUserClick={setSBiodata} />}
                                 {aT === 'anggota' && <AnggotaView data={anggota} onAdd={d => aD('anggota', d)} onUpdate={(i, d) => uD('anggota', i, d)} onDelete={i => sC('Hapus', 'Yakin?', () => dD('anggota', i))} onDeleteMany={is => is.forEach(i => dD('anggota', i))} showAlert={sA} showConfirm={sC} filter={fA} setFilter={setFA} onPrint={hP} sekolah={sekolah} onUpdatePengaturan={uS} />}
                                 {aT === 'buku' && <BukuView data={buku} peminjaman={peminjaman} onAdd={d => aD('buku', d)} onUpdate={(i, d) => uD('buku', i, d)} onDelete={i => sC('Hapus', 'Yakin?', () => dD('buku', i))} showAlert={sA} onPrint={hP} filter={fBuku} setFilter={setFBuku} />}
-                                {aT === 'audit' && <AuditEksemplarView buku={buku} peminjaman={peminjaman} onPrintSisa={items => { setPSisaItems(items); setPM('label_sisa'); }} />}
+                                {aT === 'audit' && <AuditEksemplarView buku={buku} peminjaman={peminjaman} anggota={anggota} sekolah={sekolah} onPrintSisa={items => { setPSisaItems(items); setPM('label_sisa'); }} />}
                                 {aT === 'reduksi' && <ReduksiView data={buku} onUpdate={(i, d) => uD('buku', i, d)} onDelete={i => sC('Hapus Permanen', 'Yakin?', () => dD('buku', i))} onPrint={hP} filter={fRed} setFilter={setFRed} />}
                                 {aT === 'hadir' && <HadirView data={kehadiran} anggota={anggota} buku={buku} peminjaman={peminjaman} quotes={quotes} onAdd={d => aD('kehadiran', d)} onAddQuote={d => aD('quotes', d)} onDeleteQuote={i => sC('Hapus Quote', 'Yakin?', () => dD('quotes', i))} showAlert={sA} sekolah={sekolah} onUserClick={setSBiodata} />}
                                 {aT === 'pinjam' && <PinjamView data={peminjaman} anggota={anggota} buku={buku} sekolah={sekolah} onAdd={d => aD('peminjaman', d)} onUpdate={(i, d) => uD('peminjaman', i, d)} onDelete={i => dD('peminjaman', i)} onUpdateBuku={uD} showAlert={sA} showConfirm={sC} />}
