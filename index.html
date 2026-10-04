@@ -22,7 +22,9 @@
     <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-    
+    <script src="https://fastly.jsdelivr.net/npm/barcode-detector@2/dist/es/pure.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -147,7 +149,223 @@ const formatNamaGelarPintar = (input) => {
         /* ========================================================= */
         /* --- KOMPONEN UI & MODAL --- */
         /* ========================================================= */
+// Helper penentu Kode Label Punggung Buku (Dipindahkan ke Global agar tidak error di BukuView)
+        const hitungKodeSpinePintar = (pengarangRaw, judulRaw) => {
+            if (!pengarangRaw) return "";
+            const listPengarang = pengarangRaw.split(',').map(p => p.trim()).filter(p => p.length > 0);
+            const judul = (judulRaw || "").trim();
+            if (listPengarang.length === 0) return "";
+            let tigaHurufDepan = "";
+            let satuHurufKecil = "";
+            if (listPengarang.length <= 3) {
+                tigaHurufDepan = listPengarang[0].substring(0, 3).toUpperCase();
+                satuHurufKecil = judul ? judul.charAt(0).toLowerCase() : "";
+            } else {
+                tigaHurufDepan = judul.substring(0, 3).toUpperCase();
+                satuHurufKecil = listPengarang[0] ? listPengarang[0].charAt(0).toLowerCase() : "";
+            }
+            return `${tigaHurufDepan} ${satuHurufKecil}`.trim();
+        };
 
+        // KOMPONEN SCANNER KAMERA HP (WEBASSEMBLY / NATIVE GPU SPEED)
+        const FastScannerModal = ({ isOpen, onClose, onDetected, title = "Scan Barcode via HP", continuous = false }) => {
+            const videoRef = useRef(null);
+            const [torch, setTorch] = useState(false);
+            const [hasTorch, setHasTorch] = useState(false);
+            const [zoom, setZoom] = useState(1.5);
+            const [zoomCap, setZoomCap] = useState(null);
+            const [lastScanned, setLastScanned] = useState('');
+            const [errorMsg, setErrorMsg] = useState('');
+            const streamRef = useRef(null);
+            const isScanningRef = useRef(false);
+            const audioCtxRef = useRef(null);
+            const lastCodeRef = useRef({ code: '', time: 0 });
+
+            const playBeep = () => {
+                try {
+                    if (navigator.vibrate) navigator.vibrate(70);
+                    if (!audioCtxRef.current) {
+                        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    const ctx = audioCtxRef.current;
+                    if (ctx.state === 'suspended') ctx.resume();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(2650, ctx.currentTime);
+                    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.08);
+                } catch (e) {}
+            };
+
+            useEffect(() => {
+                if (!isOpen) return;
+                setErrorMsg('');
+                setLastScanned('');
+                let animId;
+
+                const startCamera = async () => {
+                    try {
+                        const DetectorClass = window.BarcodeDetector || window. BarcodeDetectorPolyfill;
+                        const detector = new DetectorClass({
+                            formats: ['ean_13', 'code_128', 'code_39', 'qr_code', 'ean_8']
+                        });
+
+                        const stream = await navigator.mediaDevices.getUserMedia({
+                            audio: false,
+                            video: {
+                                facingMode: { ideal: 'environment' },
+                                width: { ideal: 1280 },
+                                height: { ideal: 720 },
+                                frameRate: { ideal: 30, max: 60 },
+                                advanced: [{ focusMode: 'continuous' }]
+                            }
+                        });
+
+                        streamRef.current = stream;
+                        if (videoRef.current) {
+                            videoRef.current.srcObject = stream;
+                            videoRef.current.setAttribute('playsinline', true);
+                            await videoRef.current.play();
+                        }
+
+                        // Cek kapabilitas Flash/Torch dan Hardware Zoom (Supaya tidak blur dari jarak 20cm)
+                        const track = stream.getVideoTracks()[0];
+                        const caps = track.getCapabilities ? track.getCapabilities() : {};
+                        if (caps.torch) setHasTorch(true);
+                        if (caps.zoom) {
+                            setZoomCap({ min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1 });
+                            const initZoom = Math.min(Math.max(1.5, caps.zoom.min), caps.zoom.max);
+                            setZoom(initZoom);
+                            track.applyConstraints({ advanced: [{ zoom: initZoom }] }).catch(() => {});
+                        }
+
+                        isScanningRef.current = true;
+
+                        const scanLoop = async () => {
+                            if (!isScanningRef.current) return;
+                            if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+                                try {
+                                    const barcodes = await detector.detect(videoRef.current);
+                                    if (barcodes.length > 0) {
+                                        const raw = barcodes[0].rawValue.trim();
+                                        const now = Date.now();
+                                        if (raw && (raw !== lastCodeRef.current.code || now - lastCodeRef.current.time > 1800)) {
+                                            lastCodeRef.current = { code: raw, time: now };
+                                            playBeep();
+                                            setLastScanned(raw);
+                                            onDetected(raw);
+                                            if (!continuous) {
+                                                stopCamera();
+                                                onClose();
+                                                return;
+                                            }
+                                        }
+                                    }
+                                } catch (e) {}
+                            }
+                            if (isScanningRef.current) {
+                                animId = requestAnimationFrame(scanLoop);
+                            }
+                        };
+                        animId = requestAnimationFrame(scanLoop);
+                    } catch (err) {
+                        setErrorMsg('Kamera tidak dapat diakses. Pastikan izin kamera diberikan dan menggunakan koneksi HTTPS.');
+                    }
+                };
+
+                const stopCamera = () => {
+                    isScanningRef.current = false;
+                    if (animId) cancelAnimationFrame(animId);
+                    if (streamRef.current) {
+                        streamRef.current.getTracks().forEach(t => t.stop());
+                        streamRef.current = null;
+                    }
+                };
+
+                startCamera();
+                return () => stopCamera();
+            }, [isOpen]);
+
+            const toggleTorch = async () => {
+                const track = streamRef.current?.getVideoTracks()[0];
+                if (track && hasTorch) {
+                    const next = !torch;
+                    await track.applyConstraints({ advanced: [{ torch: next }] }).catch(() => {});
+                    setTorch(next);
+                }
+            };
+
+            const handleZoomChange = async (e) => {
+                const val = parseFloat(e.target.value);
+                setZoom(val);
+                const track = streamRef.current?.getVideoTracks()[0];
+                if (track) {
+                    await track.applyConstraints({ advanced: [{ zoom: val }] }).catch(() => {});
+                }
+            };
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[999999] flex items-center justify-center p-4" onClick={onClose}>
+                    <div className="bg-slate-900 border border-slate-700 rounded-[2rem] w-full max-w-md overflow-hidden shadow-2xl text-white" onClick={e => e.stopPropagation()}>
+                        <div className="p-5 flex justify-between items-center border-b border-slate-800">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center"><i className="fas fa-camera"></i></div>
+                                <div>
+                                    <h3 className="font-black text-base leading-tight">{title}</h3>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Engine: Native GPU / WebAssembly</p>
+                                </div>
+                            </div>
+                            <button onClick={onClose} className="w-9 h-9 bg-slate-800 hover:bg-rose-600 rounded-full flex items-center justify-center transition-colors"><i className="fas fa-times"></i></button>
+                        </div>
+
+                        <div className="relative bg-black aspect-[4/3] w-full overflow-hidden flex items-center justify-center">
+                            {errorMsg ? (
+                                <div className="p-6 text-center text-rose-400 text-sm font-bold"><i className="fas fa-exclamation-triangle text-3xl mb-2 block"></i>{errorMsg}</div>
+                            ) : (
+                                <>
+                                    <video ref={videoRef} className="w-full h-full object-cover" muted playsInline></video>
+                                    {/* Kotak Bidik ROI & Garis Laser Kasir */}
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                        <div className="w-4/5 h-36 border-2 border-indigo-400/80 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">
+                                            <div className="absolute left-2 right-2 top-1/2 h-0.5 bg-rose-500 shadow-[0_0_12px_#f43f5e] animate-pulse"></div>
+                                        </div>
+                                    </div>
+                                    {hasTorch && (
+                                        <button type="button" onClick={toggleTorch} className={`absolute bottom-3 right-3 w-11 h-11 rounded-full flex items-center justify-center shadow-lg transition-all ${torch ? 'bg-amber-400 text-slate-900' : 'bg-slate-800/80 text-white'}`}>
+                                            <i className="fas fa-bolt"></i>
+                                        </button>
+                                    )}
+                                </>
+                            )}
+                        </div>
+
+                        <div className="p-5 space-y-4 bg-slate-900">
+                            {zoomCap && (
+                                <div className="flex items-center gap-3">
+                                    <i className="fas fa-search-minus text-xs text-slate-400"></i>
+                                    <input type="range" min={zoomCap.min} max={ Math.min(zoomCap.max, 4) } step={zoomCap.step} value={zoom} onChange={handleZoomChange} className="flex-1 accent-indigo-500" />
+                                    <span className="text-xs font-black text-indigo-400 w-10 text-right">{zoom.toFixed(1)}x</span>
+                                </div>
+                            )}
+                            {lastScanned && (
+                                <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between">
+                                    <span><i className="fas fa-check-circle mr-2"></i>Terbaca:</span>
+                                    <span className="font-mono text-sm font-black">{lastScanned}</span>
+                                </div>
+                            )}
+                            <p className="text-[11px] text-slate-400 text-center font-medium">Arahkan barcode ke kotak tengah (jarak 15-20 cm).</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+		
         const CustomModal = ({ isOpen, title, message, onConfirm, onCancel, type = 'info', showCancel = false }) => {
             if (!isOpen) return null;
             const th = {
@@ -2211,63 +2429,264 @@ const AuditEksemplarView = ({ buku, peminjaman, anggota, sekolah, onPrintSisa })
             );
         };
 
-        const AdministrasiView = ({ sekolah, onSave, showAlert }) => {
-    const [f, setF] = useState({ kota: sekolah?.kota || '', kepalaSekolah: sekolah?.kepalaSekolah || '', nipKepalaSekolah: sekolah?.nipKepalaSekolah || '', kepalaPerpus: sekolah?.kepalaPerpus || '', nipKepala: sekolah?.nipKepala || '' });
-    
+    const AdministrasiView = ({ sekolah, onSave, showAlert, showConfirm, allData }) => {
+    const [f, setF] = useState({ 
+        kota: sekolah?.kota || '', 
+        kepalaSekolah: sekolah?.kepalaSekolah || '', 
+        nipKepalaSekolah: sekolah?.nipKepalaSekolah || '', 
+        kepalaPerpus: sekolah?.kepalaPerpus || '', 
+        nipKepala: sekolah?.nipKepala || '' 
+    });
+    const [isRestoring, setIsRestoring] = useState(false);
+    const [restoreProgress, setRestoreProgress] = useState('');
+
     useEffect(() => { 
-        setF({ kota: sekolah?.kota || '', kepalaSekolah: sekolah?.kepalaSekolah || '', nipKepalaSekolah: sekolah?.nipKepalaSekolah || '', kepalaPerpus: sekolah?.kepalaPerpus || '', nipKepala: sekolah?.nipKepala || '' }) 
+        setF({ 
+            kota: sekolah?.kota || '', 
+            kepalaSekolah: sekolah?.kepalaSekolah || '', 
+            nipKepalaSekolah: sekolah?.nipKepalaSekolah || '', 
+            kepalaPerpus: sekolah?.kepalaPerpus || '', 
+            nipKepala: sekolah?.nipKepala || '' 
+        });
     }, [sekolah]);
-    
+
+    // 1. FUNGSI BACKUP FULL DATABASE KE FILE .JSON
+    const handleBackupJSON = () => {
+        try {
+            const tanggalStr = new Date().toISOString().split('T')[0];
+            const backupPayload = {
+                metadata: {
+                    app: "Lokabaca Perpustakaan",
+                    version: APP_VERSION,
+                    activeAppId: activeAppId,
+                    exportedAt: new Date().toISOString(),
+                    counts: {
+                        buku: (allData?.buku || []).length,
+                        anggota: (allData?.anggota || []).length,
+                        peminjaman: (allData?.peminjaman || []).length,
+                        kehadiran: (allData?.kehadiran || []).length,
+                        quotes: (allData?.quotes || []).length
+                    }
+                },
+                pengaturan: sekolah || {},
+                collections: {
+                    buku: allData?.buku || [],
+                    anggota: allData?.anggota || [],
+                    peminjaman: allData?.peminjaman || [],
+                    kehadiran: allData?.kehadiran || [],
+                    quotes: allData?.quotes || []
+                }
+            };
+
+            const jsonString = JSON.stringify(backupPayload, null, 2);
+            const blob = new Blob([jsonString], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Backup_Lokabaca_${tanggalStr}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showAlert(
+                'Backup Berhasil!', 
+                `Seluruh database berhasil diunduh:\n• ${backupPayload.metadata.counts.buku} Buku\n• ${backupPayload.metadata.counts.anggota} Anggota\n• ${backupPayload.metadata.counts.peminjaman} Transaksi Sirkulasi\n• ${backupPayload.metadata.counts.kehadiran} Riwayat Hadir`, 
+                'success'
+            );
+        } catch (err) {
+            console.error(err);
+            showAlert('Gagal Backup', 'Terjadi kesalahan saat membuat file cadangan.', 'error');
+        }
+    };
+
+    // 2. FUNGSI RESTORE DATABASE DARI FILE .JSON (DENGAN CHUNKED BATCH FIRESTORE)
+    const handleRestoreJSON = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const parsed = JSON.parse(event.target.result);
+                if (!parsed.collections || !parsed.metadata) {
+                    e.target.value = null;
+                    return showAlert('Format Tidak Valid', 'File JSON ini bukan file backup resmi dari Lokabaca!', 'error');
+                }
+
+                const c = parsed.metadata.counts || {};
+                const infoMsg = `Anda akan memulihkan data dari tanggal ${formatDate(parsed.metadata.exportedAt)}:\n\n` +
+                                `• Buku: ${c.buku || 0} data\n` +
+                                `• Anggota: ${c.anggota || 0} data\n` +
+                                `• Peminjaman: ${c.peminjaman || 0} data\n` +
+                                `• Kehadiran: ${c.kehadiran || 0} data\n\n` +
+                                `Data dengan ID yang sama akan diperbarui (merge). Lanjutkan proses Restore?`;
+
+                showConfirm('Konfirmasi Restore Database', infoMsg, async () => {
+                    setIsRestoring(true);
+                    try {
+                        // A. Pulihkan Pengaturan Sekolah
+                        if (parsed.pengaturan) {
+                            setRestoreProgress('Memulihkan Profil & Pengaturan...');
+                            await db.doc(`artifacts/${activeAppId}/public/data/pengaturan/profil`).set(parsed.pengaturan, { merge: true });
+                        }
+
+                        // B. Kumpulkan semua dokumen dari 5 koleksi
+                        const operations = [];
+                        const colNames = ['buku', 'anggota', 'peminjaman', 'kehadiran', 'quotes'];
+                        
+                        colNames.forEach(colName => {
+                            const items = parsed.collections[colName] || [];
+                            items.forEach(item => {
+                                const { id, ...docData } = item;
+                                const docRef = id 
+                                    ? db.doc(`artifacts/${activeAppId}/public/data/${colName}/${id}`)
+                                    : db.collection(`artifacts/${activeAppId}/public/data/${colName}`).doc();
+                                operations.push({ ref: docRef, data: docData });
+                            });
+                        });
+
+                        // C. Eksekusi dengan Batch Chunking (Maks 400 dokumen per batch agar aman dari limit 500 Firestore)
+                        const chunkSize = 400;
+                        for (let i = 0; i < operations.length; i += chunkSize) {
+                            const chunk = operations.slice(i, i + chunkSize);
+                            const batch = db.batch();
+                            chunk.forEach(op => batch.set(op.ref, op.data, { merge: true }));
+                            
+                            const persen = Math.min(100, Math.round(((i + chunk.length) / operations.length) * 100));
+                            setRestoreProgress(`Memulihkan Database... (${persen}% - ${i + chunk.length}/${operations.length} data)`);
+                            await batch.commit();
+                        }
+
+                        setIsRestoring(false);
+                        setRestoreProgress('');
+                        showAlert('Restore Selesai!', `Berhasil memulihkan total ${operations.length} rekaman data ke server Firebase.`, 'success');
+                    } catch (errRestore) {
+                        console.error(errRestore);
+                        setIsRestoring(false);
+                        setRestoreProgress('');
+                        showAlert('Error Restore', 'Terjadi gangguan koneksi saat menulis data ke Firebase.', 'error');
+                    }
+                });
+            } catch (err) {
+                showAlert('File Rusak', 'Gagal membaca file JSON. Pastikan file tidak rusak.', 'error');
+            }
+            e.target.value = null;
+        };
+        reader.readAsText(file);
+    };
+
     return (
-        <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden max-w-4xl mx-auto">
-            <div className="p-8 md:p-12 border-b border-slate-100 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-50 via-white to-white">
-                <h2 className="text-3xl font-black text-indigo-950 mb-3 tracking-tight flex items-center gap-4">
-                    <i className="fas fa-user-tie text-indigo-500"></i> Kelola Data Administrasi
-                </h2>
-                <p className="text-slate-500 font-semibold text-sm">Silakan kelola data identitas untuk cetak laporan otomatis.</p>
+        <div className="space-y-8 max-w-4xl mx-auto">
+            {/* BAGIAN 1: FORM ADMINISTRASI KEPALA SEKOLAH & PERPUSTAKAAN */}
+            <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden">
+                <div className="p-8 md:p-12 border-b border-slate-100 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-50 via-white to-white">
+                    <h2 className="text-3xl font-black text-indigo-950 mb-3 tracking-tight flex items-center gap-4">
+                        <i className="fas fa-user-tie text-indigo-500"></i> Kelola Data Administrasi
+                    </h2>
+                    <p className="text-slate-500 font-semibold text-sm">Silakan kelola data identitas pejabat pengesahan untuk cetak laporan otomatis.</p>
+                </div>
+                <form onSubmit={e => { e.preventDefault(); onSave({ ...sekolah, ...f }); }} className="p-8 md:p-12 space-y-8">
+                    <Input label="Kota / Kabupaten (Tempat Cetak Laporan)" value={f.kota} onChange={e => setF({ ...f, kota: e.target.value })} placeholder="Contoh: Jember" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="space-y-5 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                            <h3 className="font-black text-slate-800 border-b border-slate-200 pb-3">
+                                <i className="fas fa-building-user text-indigo-500 mr-2"></i>Kepala Sekolah
+                            </h3>
+                            <Input 
+                                label="Nama Kepala Sekolah" 
+                                value={f.kepalaSekolah} 
+                                onChange={e => setF({ ...f, kepalaSekolah: e.target.value })} 
+                                onBlur={e => setF({ ...f, kepalaSekolah: formatNamaGelarPintar(e.target.value) })}
+                                placeholder="Nama Lengkap & Gelar" 
+                            />
+                            <Input label="NIP Kepala Sekolah" value={f.nipKepalaSekolah} onChange={e => setF({ ...f, nipKepalaSekolah: e.target.value })} placeholder="Kosongkan jika tidak ada" />
+                        </div>
+                        <div className="space-y-5 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                            <h3 className="font-black text-slate-800 border-b border-slate-200 pb-3">
+                                <i className="fas fa-book-open-reader text-indigo-500 mr-2"></i>Kepala Perpustakaan
+                            </h3>
+                            <Input 
+                                label="Nama Kepala Perpustakaan" 
+                                value={f.kepalaPerpus} 
+                                onChange={e => setF({ ...f, kepalaPerpus: e.target.value })} 
+                                onBlur={e => setF({ ...f, kepalaPerpus: formatNamaGelarPintar(e.target.value) })}
+                                placeholder="Nama Lengkap & Gelar" 
+                            />
+                            <Input label="NIP Kepala Perpustakaan" value={f.nipKepala} onChange={e => setF({ ...f, nipKepala: e.target.value })} placeholder="Kosongkan jika tidak ada" />
+                        </div>
+                    </div>
+                    <div className="pt-8 border-t border-slate-100 flex justify-end">
+                        <button type="submit" className="btn-primary px-8 py-4 text-lg w-full md:w-auto">
+                            <i className="fas fa-save mr-2"></i> Simpan Data Administrasi
+                        </button>
+                    </div>
+                </form>
             </div>
-            <form onSubmit={e => { e.preventDefault(); onSave({ ...sekolah, ...f }) }} className="p-8 md:p-12 space-y-8">
-                <Input label="Kota / Kabupaten (Tempat Cetak Laporan)" value={f.kota} onChange={e => setF({ ...f, kota: e.target.value })} placeholder="Contoh: Jember" />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-5 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                        <h3 className="font-black text-slate-800 border-b border-slate-200 pb-3">
-                            <i className="fas fa-building-user text-indigo-500 mr-2"></i>Kepala Sekolah
+
+            {/* BAGIAN 2: PANEL BACKUP & RESTORE DATABASE 1-KLIK */}
+            <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-0 overflow-hidden p-8 md:p-12">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 pb-6 border-b border-slate-100">
+                    <div>
+                        <h3 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                            <i className="fas fa-database text-emerald-500"></i> Backup & Restore Database (Full Snapshot)
                         </h3>
-                        {/* DETEKTOR PINTAR DITAMBAHKAN PADA ONBLUR DI BAWAH INI */}
-                        <Input 
-                            label="Nama Kepala Sekolah" 
-                            value={f.kepalaSekolah} 
-                            onChange={e => setF({ ...f, kepalaSekolah: e.target.value })} 
-                            onBlur={e => setF({ ...f, kepalaSekolah: formatNamaGelarPintar(e.target.value) })}
-                            placeholder="Nama Lengkap & Gelar" 
-                        />
-                        <Input label="NIP Kepala Sekolah" value={f.nipKepalaSekolah} onChange={e => setF({ ...f, nipKepalaSekolah: e.target.value })} placeholder="Kosongkan jika tidak ada" />
+                        <p className="text-sm font-semibold text-slate-500 mt-1">
+                            Cadangkan seluruh koleksi buku, anggota, riwayat sirkulasi, daftar hadir, dan pengaturan dalam 1 file JSON.
+                        </p>
                     </div>
-                    <div className="space-y-5 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                        <h3 className="font-black text-slate-800 border-b border-slate-200 pb-3">
-                            <i className="fas fa-book-open-reader text-indigo-500 mr-2"></i>Kepala Perpustakaan
-                        </h3>
-                        {/* DETEKTOR PINTAR DITAMBAHKAN PADA ONBLUR DI BAWAH INI */}
-                        <Input 
-                            label="Nama Kepala Perpustakaan" 
-                            value={f.kepalaPerpus} 
-                            onChange={e => setF({ ...f, kepalaPerpus: e.target.value })} 
-                            onBlur={e => setF({ ...f, kepalaPerpus: formatNamaGelarPintar(e.target.value) })}
-                            placeholder="Nama Lengkap & Gelar" 
-                        />
-                        <Input label="NIP Kepala Perpustakaan" value={f.nipKepala} onChange={e => setF({ ...f, nipKepala: e.target.value })} placeholder="Kosongkan jika tidak ada" />
+                    <span className="px-4 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl text-xs font-black uppercase tracking-wider shrink-0">
+                        Aman & Terintegrasi
+                    </span>
+                </div>
+
+                {isRestoring ? (
+                    <div className="p-8 bg-indigo-50 border border-indigo-200 rounded-2xl text-center space-y-3 animate-pulse">
+                        <i className="fas fa-sync-alt fa-spin text-4xl text-indigo-600"></i>
+                        <h4 className="font-black text-indigo-950 text-lg">{restoreProgress}</h4>
+                        <p className="text-xs font-bold text-indigo-500">Mohon jangan tutup halaman ini sampai proses selesai...</p>
                     </div>
-                </div>
-                <div className="pt-8 border-t border-slate-100 flex justify-end">
-                    <button type="submit" className="btn-primary px-8 py-4 text-lg w-full md:w-auto">
-                        <i className="fas fa-save mr-2"></i> Simpan Data Administrasi
-                    </button>
-                </div>
-            </form>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Kotak Backup */}
+                        <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col justify-between">
+                            <div>
+                                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-xl mb-4">
+                                    <i className="fas fa-cloud-arrow-down"></i>
+                                </div>
+                                <h4 className="font-black text-slate-800 text-lg mb-1">Unduh Full Backup (.JSON)</h4>
+                                <p className="text-xs font-medium text-slate-500 leading-relaxed mb-6">
+                                    Simpan salinan utuh seluruh database Lokabaca ke komputer/HP Anda. Disarankan dilakukan rutin setiap akhir bulan atau sebelum kenaikan kelas.
+                                </p>
+                            </div>
+                            <button type="button" onClick={handleBackupJSON} className="w-full py-3.5 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2">
+                                <i className="fas fa-download"></i> Download File Backup Sekarang
+                            </button>
+                        </div>
+
+                        {/* Kotak Restore */}
+                        <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col justify-between">
+                            <div>
+                                <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center text-xl mb-4">
+                                    <i className="fas fa-cloud-arrow-up"></i>
+                                </div>
+                                <h4 className="font-black text-slate-800 text-lg mb-1">Pulihkan Database (Restore)</h4>
+                                <p className="text-xs font-medium text-slate-500 leading-relaxed mb-6">
+                                    Unggah file <code className="bg-slate-200 px-1.5 py-0.5 rounded font-bold">.json</code> hasil backup Lokabaca untuk mengembalikan seluruh data ke dalam Firebase secara otomatis.
+                                </p>
+                            </div>
+                            <label className="w-full py-3.5 px-6 bg-white hover:bg-amber-50 text-amber-700 border-2 border-amber-300 font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm">
+                                <i className="fas fa-upload"></i> Pilih File Backup (.JSON)
+                                <input type="file" accept=".json" onChange={handleRestoreJSON} className="hidden" />
+                            </label>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
-
      const AnggotaView = ({ data, onAdd, onUpdate, onDelete, onDeleteMany, showAlert, showConfirm, filter, setFilter, onPrint, sekolah, onUpdatePengaturan }) => {
     const iF = { nisn: '', nama: '', tempatLahir: '', tanggalLahir: '', jenisKelamin: 'L', alamat: '', telepon: '', kategori: 'Siswa', jurusan: '', kelasJurusan: '', kelas: 'X', noKelas: '', tahunPelajaran: '', status: 'Aktif', foto: '' };
     const [io, setIo] = useState(false), [eId, setEId] = useState(null), [f, setF] = useState(iF), [sDM, setSDM] = useState(false), [dT, setDT] = useState('all'), [dV, setDV] = useState('');
@@ -2683,6 +3102,81 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
     
     const [io, setIo] = useState(false), [eId, setEId] = useState(null), [f, setF] = useState(''), [fm, setFm] = useState(iF), [aT, setAT] = useState('metadata');
     const [rM, setRM] = useState({ is: false, b: null, alasan: '', tgl: new Date().toISOString().split('T')[0] });
+	const [isFetchingIsbn, setIsFetchingIsbn] = useState(false);
+    const [scanTarget, setScanTarget] = useState(null); // 'search' | 'isbn' | 'noInduk'
+
+    // FUNGSI AUTO-FILL KATALOG DARI ISBN (GOOGLE BOOKS API + FALLBACK OPENLIBRARY)
+    const fetchBookByISBN = async (rawIsbn) => {
+        const cleanIsbn = String(rawIsbn).replace(/[^0-9Xx]/g, '');
+        if (!cleanIsbn || cleanIsbn.length < 10) {
+            return showAlert('ISBN Tidak Valid', 'Masukkan minimal 10 atau 13 angka ISBN.', 'warning');
+        }
+        setIsFetchingIsbn(true);
+        try {
+            let found = null;
+            // 1. Cari di Google Books API
+            const resG = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`);
+            const dataG = await resG.json();
+            if (dataG.items && dataG.items.length > 0) {
+                const info = dataG.items[0].volumeInfo;
+                found = {
+                    judul: info.title || '',
+                    anakJudul: info.subtitle || '',
+                    pengarang: (info.authors || []).join(', '),
+                    penerbit: info.publisher || '',
+                    tahun: (info.publishedDate || '').substring(0, 4),
+                    deskripsiFisik: info.pageCount ? `${info.pageCount} hlm.` : '',
+                    subjek: (info.categories || []).join(', '),
+                    sinopsis: info.description || '',
+                    cover: info.imageLinks?.thumbnail ? info.imageLinks.thumbnail.replace('http://', 'https://') : ''
+                };
+            } else {
+                // 2. Fallback ke OpenLibrary API jika di Google Books kosong
+                const resOL = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`);
+                const dataOL = await resOL.json();
+                const bookOL = dataOL[`ISBN:${cleanIsbn}`];
+                if (bookOL) {
+                    found = {
+                        judul: bookOL.title || '',
+                        anakJudul: bookOL.subtitle || '',
+                        pengarang: (bookOL.authors || []).map(a => a.name).join(', '),
+                        penerbit: (bookOL.publishers || []).map(p => p.name).join(', '),
+                        tahun: (bookOL.publish_date || '').match(/\d{4}/)?.[0] || '',
+                        deskripsiFisik: bookOL.number_of_pages ? `${bookOL.number_of_pages} hlm.` : '',
+                        subjek: (bookOL.subjects || []).slice(0, 3).map(s => s.name).join(', '),
+                        sinopsis: typeof bookOL.notes === 'string' ? bookOL.notes : '',
+                        cover: bookOL.cover?.medium || bookOL.cover?.small || ''
+                    };
+                }
+            }
+
+            if (found) {
+                setFm(prev => ({
+                    ...prev,
+                    isbn: cleanIsbn,
+                    noInduk: prev.noInduk || cleanIsbn,
+                    judul: found.judul || prev.judul,
+                    anakJudul: found.anakJudul || prev.anakJudul,
+                    pengarang: found.pengarang || prev.pengarang,
+                    penerbit: found.penerbit || prev.penerbit,
+                    tahun: found.tahun || prev.tahun,
+                    deskripsiFisik: found.deskripsiFisik || prev.deskripsiFisik,
+                    subjek: found.subjek || prev.subjek,
+                    sinopsis: found.sinopsis || prev.sinopsis,
+                    cover: found.cover || prev.cover,
+                    kodeLabel: hitungKodeSpinePintar(found.pengarang || prev.pengarang, found.judul || prev.judul)
+                }));
+                showAlert('Auto-Fill Berhasil!', `Data buku "${found.judul}" berhasil ditarik otomatis dari database ISBN.`, 'success');
+            } else {
+                setFm(prev => ({ ...prev, isbn: cleanIsbn, noInduk: prev.noInduk || cleanIsbn }));
+                showAlert('ISBN Tercatat', `Kode ISBN ${cleanIsbn} berhasil di-scan, namun detail buku belum terdaftar di database publik. Silakan lengkapi judul secara manual.`, 'info');
+            }
+        } catch (err) {
+            showAlert('Gagal Menarik Data', 'Terjadi gangguan koneksi saat menghubungi server ISBN.', 'error');
+        } finally {
+            setIsFetchingIsbn(false);
+        }
+    };
 
     // STATE BARU UNTUK PAGINATION (PAGINASI)
     const [currentPage, setCurrentPage] = useState(1);
@@ -2916,9 +3410,20 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
                                     <div className="md:col-span-8 space-y-5">
                                         <Input label="Judul Lengkap" value={fm.judul} onChange={e => setFm({ ...fm, judul: e.target.value })} onBlur={e => setFm({ ...fm, kodeLabel: hitungKodeSpinePintar(fm.pengarang, e.target.value) })} required={true} />
                                         <Input label="Anak Judul (Opsional)" value={fm.anakJudul || ''} onChange={e => setFm({ ...fm, anakJudul: e.target.value })} />
-                                        <div className="grid grid-cols-2 gap-5">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                             <Input label="Pengarang" value={fm.pengarang} placeholder="Pisahkan dgn koma jika > 1" onChange={e => setFm({ ...fm, pengarang: e.target.value })} onBlur={e => setFm({ ...fm, kodeLabel: hitungKodeSpinePintar(e.target.value, fm.judul) })} required={true} />
-                                            <Input label="ISBN" value={fm.isbn} onChange={e => setFm({ ...fm, isbn: e.target.value })} />
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-600 mb-1.5 ml-1">ISBN (Auto-Fill Katalog)</label>
+                                                <div className="flex gap-2">
+                                                    <input type="text" className="input-field" placeholder="Scan / Ketik ISBN..." value={fm.isbn} onChange={e => setFm({ ...fm, isbn: e.target.value })} />
+                                                    <button type="button" onClick={() => setScanTarget('isbn')} className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl shadow-md shrink-0" title="Scan ISBN via Kamera HP">
+                                                        <i className="fas fa-camera"></i>
+                                                    </button>
+                                                    <button type="button" onClick={() => fetchBookByISBN(fm.isbn)} disabled={isFetchingIsbn} className="px-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold text-xs shadow-md shrink-0 disabled:opacity-50" title="Tarik Data Otomatis dari ISBN">
+                                                        <i className={`fas ${isFetchingIsbn ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'}`}></i>
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                         <div className="grid grid-cols-3 gap-5">
                                             <Input label="Penerbit" value={fm.penerbit} onChange={e => setFm({ ...fm, penerbit: e.target.value })} />
@@ -3004,6 +3509,16 @@ const BukuView = ({ data, peminjaman = [], onAdd, onUpdate, onDelete, showAlert 
                     </div>
                 </div>
             )}
+
+			<FastScannerModal 
+                isOpen={!!scanTarget} 
+                onClose={() => setScanTarget(null)} 
+                title={scanTarget === 'isbn' ? 'Scan ISBN Buku Baru' : 'Scan Barcode Buku'}
+                onDetected={(code) => {
+                    if (scanTarget === 'isbn') fetchBookByISBN(code);
+                    else if (scanTarget === 'search') { setF(code); setCurrentPage(1); }
+                }} 
+            />
         </div>
     );
 };
@@ -3184,6 +3699,34 @@ const getShortBarcode = (text) => {
     
     return `${shortHash}${tail}`; // Contoh hasil cetak: 7XK2M023 (Sangat tebal & jelas)
     };
+    // --- GENERATOR SEGEL DIGITAL OFFLINE (ANTI-PEMALSUAN SURAT BEBAS PUSTAKA) ---
+const getValidasiToken = (siswa) => {
+    if (!siswa) return "LKB-000000";
+    // Menggabungkan ID, NISN, Nama, dan Salt Rahasia Sekolah
+    const rawStr = `${siswa.id || ''}|${siswa.nisn || ''}|${(siswa.nama || '').toUpperCase()}|SMKN1JBR_SECRET_2026`;
+    let h1 = 0xdeadbeef ^ rawStr.length;
+    let h2 = 0x41c6ce57 ^ rawStr.length;
+    for (let i = 0, ch; i < rawStr.length; i++) {
+        ch = rawStr.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    const code = (h1 >>> 0).toString(16).toUpperCase().padStart(6, '0').slice(0, 6);
+    return `LKB-${code}`;
+};
+// --- GENERATOR GAMBAR QR CODE LOKAL (INSTAN & 100% MUNCUL SAAT PRINT) ---
+const generateLocalQR = (text) => {
+    try {
+        if (typeof qrcode === 'function') {
+            const qr = qrcode(0, 'M');
+            qr.addData(text);
+            qr.make();
+            return qr.createDataURL(4, 1); // Langsung jadi gambar Base64 di memori!
+        }
+    } catch (e) { console.error(e); }
+    return `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(text)}`;
+};
 // ----------------------------------------------------------
 
 const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDelete, onUpdateBuku, showAlert, showConfirm, sekolah }) => {
@@ -3198,6 +3741,7 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 10;
     const [isPrintingPinjam, setIsPrintingPinjam] = useState(false);
+    const [scanMode, setScanMode] = useState(null); // 'anggota' | 'buku'
 
     const identitasRef = useRef(null);
     useEffect(() => {
@@ -3419,28 +3963,39 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                                     <button type="button" onClick={() => { setSA(null); setF({ ...f, idA: '' }); setTimeout(() => identitasRef.current?.focus(), 100); }} className="w-8 h-8 bg-white text-rose-500 rounded-full my-auto shadow-sm hover:scale-110 transition-transform"><i className="fas fa-times"></i></button>
                                 </div>
                             ) : (
-                                <div className="relative">
-                                    <i className="fas fa-search absolute left-4 top-3.5 text-indigo-400"></i>
-                                    <input ref={identitasRef} type="text" placeholder="Ketik Nama/Scan NISN..." className="input-field pl-11 shadow-inner focus:ring-4 focus:ring-indigo-100 transition-all" value={sQ} onChange={hSC} onFocus={() => setSD(true)} onBlur={() => setTimeout(() => setSD(false), 200)} />
-                                    {sD && sQ.length > 1 && (
-                                        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl max-h-60 overflow-y-auto z-50 border border-slate-100 p-2">
-                                            {fA.length === 0 ? <p className="text-center text-xs font-bold text-slate-400 py-4">Tidak ditemukan</p> : fA.map(a => (
-                                                <div key={a.id} onMouseDown={(e) => { e.preventDefault(); setSA(a); setF(p => ({ ...p, idA: a.id })); setSQ(''); setSD(false); setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100); }} className="p-3 hover:bg-indigo-50 cursor-pointer flex items-center gap-3 rounded-xl transition-colors">
-                                                    <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 flex items-center justify-center border border-slate-200">
-                                                        {a.foto ? <img src={a.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-slate-400"></i>}
+                                <div className="relative flex gap-2">
+                                    <div className="relative flex-1">
+                                        <i className="fas fa-search absolute left-4 top-3.5 text-indigo-400"></i>
+                                        <input ref={identitasRef} type="text" placeholder="Ketik Nama/Scan NISN..." className="input-field pl-11 shadow-inner focus:ring-4 focus:ring-indigo-100 transition-all" value={sQ} onChange={hSC} onFocus={() => setSD(true)} onBlur={() => setTimeout(() => setSD(false), 200)} />
+                                        {sD && sQ.length > 1 && (
+                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl max-h-60 overflow-y-auto z-50 border border-slate-100 p-2">
+                                                {fA.length === 0 ? <p className="text-center text-xs font-bold text-slate-400 py-4">Tidak ditemukan</p> : fA.map(a => (
+                                                    <div key={a.id} onMouseDown={(e) => { e.preventDefault(); setSA(a); setF(p => ({ ...p, idA: a.id })); setSQ(''); setSD(false); setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100); }} className="p-3 hover:bg-indigo-50 cursor-pointer flex items-center gap-3 rounded-xl transition-colors">
+                                                        <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 flex items-center justify-center border border-slate-200">
+                                                            {a.foto ? <img src={a.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-slate-400"></i>}
+                                                        </div>
+                                                        <div><p className="font-black text-slate-800 leading-tight">{a.nama}</p><p className="text-[10px] font-bold text-indigo-500 uppercase">{a.kategori === 'Siswa' ? (typeof formatKelasSiswa === 'function' ? formatKelasSiswa(a, sekolah?.daftarJurusan) : `${a.kelas} ${a.jurusan}`) : a.kategori}</p></div>
                                                     </div>
-                                                    <div><p className="font-black text-slate-800 leading-tight">{a.nama}</p><p className="text-[10px] font-bold text-indigo-500 uppercase">{a.kategori === 'Siswa' ? (typeof formatKelasSiswa === 'function' ? formatKelasSiswa(a, sekolah?.daftarJurusan) : `${a.kelas} ${a.jurusan}`) : a.kategori}</p></div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button type="button" onClick={() => setScanMode('anggota')} className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl shadow-md shrink-0 transition-transform active:scale-95" title="Scan Kartu Anggota via HP">
+                                        <i className="fas fa-camera text-lg"></i>
+                                    </button>
                                 </div>
                             )}
                         </div>
                         <div>
                             <label className="block text-sm font-bold mb-1.5">Scan Barcode Buku</label>
-                            <input id="barcodeInput" type="text" className="input-field border-indigo-300 bg-indigo-50 font-mono font-bold text-lg shadow-inner focus:ring-4 focus:ring-indigo-100 transition-all" value={f.kodeEksemplar} onChange={e => setF({ ...f, kodeEksemplar: e.target.value })} required autoFocus={!!sA} disabled={!sA} placeholder={sA ? "Scan sekarang..." : "Pilih Peminjam Dahulu"} />
+                            <div className="flex gap-2">
+                                <input id="barcodeInput" type="text" className="input-field border-indigo-300 bg-indigo-50 font-mono font-bold text-lg shadow-inner focus:ring-4 focus:ring-indigo-100 transition-all" value={f.kodeEksemplar} onChange={e => setF({ ...f, kodeEksemplar: e.target.value })} required autoFocus={!!sA} disabled={!sA} placeholder={sA ? "Scan sekarang..." : "Pilih Peminjam Dahulu"} />
+                                <button type="button" disabled={!sA} onClick={() => setScanMode('buku')} className="px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-2xl shadow-md shrink-0 transition-transform active:scale-95" title="Scan Barcode Buku via HP">
+                                    <i className="fas fa-camera text-lg"></i>
+                                </button>
+                            </div>
                         </div>
+                       
                         <div className="grid grid-cols-2 gap-4">
                             <Input label="Tgl Pinjam" type="date" value={f.tgl} onChange={e => setF({ ...f, tgl: e.target.value })} required={true} />
                             <Input label="Batas (Hari)" type="number" value={f.isPaket ? 365 : f.lama} onChange={e => setF({ ...f, lama: e.target.value })} required={!f.isPaket} disabled={f.isPaket} />
@@ -3755,6 +4310,25 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                     </div>
                 </div>
             )}
+            <FastScannerModal 
+                isOpen={!!scanMode} 
+                onClose={() => setScanMode(null)} 
+                title={scanMode === 'anggota' ? 'Scan Kartu Anggota' : `Scan Buku untuk ${sA?.nama || 'Peminjam'}`}
+                continuous={scanMode === 'buku'} // Jika scan buku, kamera tetap menyala untuk scan banyak buku sekaligus!
+                onDetected={(code) => {
+                    if (scanMode === 'anggota') {
+                        hSC({ target: { value: code } });
+                    } else if (scanMode === 'buku') {
+                        const inputEl = document.getElementById('barcodeInput');
+                        if (inputEl) inputEl.value = code;
+                        setF(prev => ({ ...prev, kodeEksemplar: code }));
+                        // Otomatis jalankan proses pinjam seperti tekan Enter di scanner kasir
+                        setTimeout(() => {
+                            hS({ preventDefault: () => {} });
+                        }, 50);
+                    }
+                }} 
+            />
         </>
     );
 };
@@ -3765,6 +4339,7 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
     
     const [confirmBook, setConfirmBook] = useState(null);
     const [showSplash, setShowSplash] = useState(false);
+    const [isScanOpen, setIsScanOpen] = useState(false);
 
     // STATE BARU UNTUK PAGINATION (PAGINASI)
     const [currentPage, setCurrentPage] = useState(1);
@@ -3823,9 +4398,10 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
         }
     };
 
-    const hVS = e => {
-        e.preventDefault(); 
-        const sC = vC.trim();
+    const hVS = (e, scannedCode = null) => {
+        if (e && e.preventDefault) e.preventDefault(); 
+        const sC = (scannedCode !== null ? scannedCode : vC).trim();
+        if (!sC) return;
         const cbFocus = () => setTimeout(() => document.getElementById('barcodeKembali')?.focus(), 100);
         
         let aL = data.find(d => d.status === 'Dipinjam' && d.kodeEksemplar && d.kodeEksemplar.toLowerCase() === sC.toLowerCase());
@@ -3873,9 +4449,15 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
                         </div>
                     </div>
                 )}
-                <form onSubmit={hVS} className="max-w-2xl relative">
-                    <input id="barcodeKembali" type="text" placeholder="Scan Barcode..." className="w-full px-6 py-5 rounded-2xl text-xl font-mono font-bold text-slate-800 shadow-2xl focus:outline-none focus:ring-4 focus:ring-emerald-300/30" value={vC} onChange={e => setVC(e.target.value)} autoFocus required />
-                    <button type="submit" className="absolute right-3 top-3 bottom-3 px-6 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-colors">Cek</button>
+                <form onSubmit={hVS} className="max-w-2xl relative flex gap-3">
+                    <div className="relative flex-1">
+                        <input id="barcodeKembali" type="text" placeholder="Scan Barcode..." className="w-full pl-6 pr-28 py-5 rounded-2xl text-xl font-mono font-bold text-slate-800 shadow-2xl focus:outline-none focus:ring-4 focus:ring-emerald-300/30" value={vC} onChange={e => setVC(e.target.value)} autoFocus required />
+                        <button type="submit" className="absolute right-3 top-3 bottom-3 px-6 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-colors">Cek</button>
+                    </div>
+                    <button type="button" onClick={() => setIsScanOpen(true)} className="px-6 bg-white text-emerald-600 hover:bg-emerald-50 rounded-2xl font-black shadow-2xl flex items-center gap-2 shrink-0 transition-transform active:scale-95" title="Scan Pengembalian via Kamera HP">
+                        <i className="fas fa-camera text-2xl"></i>
+                        <span className="hidden sm:inline text-sm">Scan HP</span>
+                    </button>
                 </form>
             </div>
             
@@ -3996,6 +4578,15 @@ const KembaliView = ({ data, onUpdate, onUpdateBuku, buku, showAlert, showConfir
                     </div>
                 </div>
             )}
+            <FastScannerModal 
+                isOpen={isScanOpen} 
+                onClose={() => setIsScanOpen(false)} 
+                title="Scan Pengembalian Buku"
+                onDetected={(code) => {
+                    setVC(code);
+                    hVS(null, code); // Otomatis tampilkan popup Konfirmasi Pengembalian!
+                }} 
+            />
         </div>
     );
 };
@@ -4383,7 +4974,44 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                                     <div key={s.id} onClick={() => toggleSelect(s)} className={`p-4 rounded-2xl flex items-center justify-between border transition-all ${adaTanggungan ? 'bg-rose-50 border-rose-100 opacity-70 cursor-not-allowed' : isSelected ? 'bg-teal-50 border-teal-500 shadow-md cursor-pointer' : 'bg-slate-50 border-slate-100 hover:border-teal-300 cursor-pointer'}`}>
                                         <div className="flex items-center gap-4">
                                             <div className={`w-6 h-6 rounded-md flex items-center justify-center border ${isSelected ? 'bg-teal-500 border-teal-500 text-white' : 'bg-white border-slate-300'}`}>{isSelected && <i className="fas fa-check text-xs"></i>}</div>
-                                            <div><p className="font-bold text-slate-800">{s.nama}</p><p className="text-xs font-bold text-slate-500">{s.nisn ? `${s.nisn} | ` : ''}{klsFormat}</p></div>
+                                            {/* --- FOOTER TANDA TANGAN + QR CODE OFFLINE ANTI-PALSU --- */}
+                                    <div className="flex justify-between items-end shrink-0 pt-1">
+                                        {(() => {
+                                            const tokenResmi = getValidasiToken(s);
+                                            const qrTextOffline = [
+                                                `SAH - BEBAS PUSTAKA`,
+                                                `${sekolah?.nama || 'PERPUSTAKAAN'}`,
+                                                `Nama: ${s.nama}`,
+                                                `NISN: ${s.nisn || '-'}`,
+                                                `Kelas: ${klsFormat}`,
+                                                `Tgl: ${config.tanggal}`,
+                                                `Token: #${tokenResmi}`
+                                            ].join('\n');
+
+                                            return (
+                                                <div className="flex items-center gap-2 border border-slate-400 rounded-lg p-1.5 bg-slate-50">
+                                                    <img 
+                                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&ecc=M&margin=1&data=${encodeURIComponent(qrTextOffline)}`} 
+                                                        alt="QR Offline" 
+                                                        crossOrigin="anonymous"
+                                                        loading="eager"
+                                                        className="w-14 h-14 object-contain bg-white p-0.5 rounded"
+                                                    />
+                                                    <div className="text-[7.5px] leading-tight text-slate-700 max-w-[90px]">
+                                                        <p className="font-black text-slate-900 uppercase">SEGEL VALIDASI</p>
+                                                        <p className="font-mono font-black text-[9px] text-indigo-900 my-0.5">#{tokenResmi}</p>
+                                                        <p className="text-[6.5px] text-slate-500">Scan QR dengan kamera HP untuk cek keaslian data.</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+                                        <div className="text-center w-48 text-slate-800">
+                                            <p className="text-[10px] mb-1">{config.tempat}, {config.tanggal}</p>
+                                            <p className="text-[10px] mb-11">Kepala Perpustakaan,</p>
+                                            <p className="text-[10px] font-black underline underline-offset-2 uppercase">{sekolah?.kepalaPerpustakaan || sekolah?.kepalaPerpus || '_______________________'}</p>
+                                            <p className="text-[9px] font-bold mt-1">NIP. {String(sekolah?.nipKepala || '_________________').replace(/NIP\.?\s*/i, '')}</p>
+                                        </div>
+                                    </div>
                                         </div>
                                         <div>{adaTanggungan ? <span className="bg-rose-100 text-rose-600 px-3 py-1 rounded-lg text-xs font-black"><i className="fas fa-exclamation-circle mr-1"></i> {tanggunganMap[s.id]} Pinjaman</span> : <span className="bg-emerald-100 text-emerald-600 px-3 py-1 rounded-lg text-xs font-black">Aman</span>}</div>
                                     </div>
@@ -4427,16 +5055,17 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                 </div>
             </div>
 
-            {/* --- AREA CETAK PRESISI A4 KOTAK PENUH --- */}
+          {/* --- AREA CETAK PRESISI A4 (RAPI & SESUAI KAIDAH NASKAH DINAS) --- */}
             <div id="print-area" className="hidden print:block bg-white text-black print-area-khusus">
                 <style>{`
                     @media print {
                         @page { size: A4 portrait; margin: 0 !important; }
                         html, body, #root, main, .h-screen, .min-h-screen, .overflow-hidden, .overflow-y-auto, .flex-1 { height: auto !important; min-height: 0 !important; max-height: none !important; overflow: visible !important; position: static !important; }
+                        #print-area, #print-area * { visibility: visible !important; }
                         #print-area { position: relative !important; width: 210mm !important; display: block !important; background: white !important; margin: 0 !important; padding: 0 !important; }
                         .print-page-wrapper { width: 210mm !important; min-height: 290mm !important; padding: 8mm !important; display: flex !important; flex-wrap: wrap !important; align-content: flex-start !important; gap: 5mm !important; box-sizing: border-box !important; page-break-inside: avoid !important; }
                         .print-page-wrapper:not(:last-child) { page-break-after: always !important; }
-                        .print-card { width: calc(50% - 2.5mm) !important; height: 135mm !important; border: 1.5px dashed #475569 !important; padding: 6mm 8mm !important; display: flex !important; flex-direction: column !important; box-sizing: border-box !important; overflow: hidden !important; page-break-inside: avoid !important; }
+                        .print-card { width: calc(50% - 2.5mm) !important; height: 132mm !important; border: 1.5px dashed #475569 !important; padding: 5mm 5.5mm !important; display: flex !important; flex-direction: column !important; justify-content: flex-start !important; box-sizing: border-box !important; overflow: hidden !important; page-break-inside: avoid !important; }
                     }
                 `}</style>
                            
@@ -4444,51 +5073,93 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
                     <div key={pageIndex} className="print-page-wrapper">
                         {pageSiswa.map(s => {
                             const klsFormat = typeof formatKelasSiswa === 'function' ? formatKelasSiswa(s, sekolah?.daftarJurusan) : s.kelas;
+                            const tokenResmi = typeof getValidasiToken === 'function' ? getValidasiToken(s) : `LKB-${String(s.nisn || s.id || '000000').slice(-6).toUpperCase()}`;
+                            const qrTextOffline = `SAH - BEBAS PUSTAKA\n${sekolah?.nama || 'SMKN 1 JEMBER'}\nNama: ${s.nama}\nNISN: ${s.nisn || '-'}\nKelas: ${klsFormat}\nTgl: ${config.tanggal}\nToken: #${tokenResmi}`;
+                            const qrDataUrl = typeof generateLocalQR === 'function' ? generateLocalQR(qrTextOffline) : '';
+
                             return (
                                 <div key={s.id} className="print-card">
-                                    {/* --- KOP SURAT --- */}
-                                    <div>
-                                        <div className="flex items-center border-b-[2.5px] border-slate-900 pb-2.5 mb-4 shrink-0">
-                                            <div className="w-12 h-12 mr-3 shrink-0 flex items-center justify-center">
-                                                {sekolah?.logo ? <img src={sekolah.logo} className="max-w-full max-h-full object-contain" alt="Logo" /> : <div className="w-10 h-10 bg-slate-200 rounded-full"></div>}
-                                            </div>
-                                            <div className="flex-1 text-center">
-                                                <h1 className="text-[12px] font-black uppercase tracking-wider leading-tight text-slate-900">{sekolah?.nama || 'PERPUSTAKAAN SEKOLAH'}</h1>
-                                                <p className="text-[8px] font-bold text-slate-700 leading-tight mt-1">{sekolah?.alamat || '-'}</p>
-                                                <p className="text-[8px] font-bold text-slate-700 leading-tight mt-0.5">{sekolah?.email || '-'} {sekolah?.npp ? `| NPP: ${sekolah.npp}` : ''}</p>
-                                            </div>
+                                    {/* === 1. KOP SURAT === */}
+                                    <div style={{ display: 'flex', alignItems: 'center', borderBottom: '2.5px solid #0f172a', paddingBottom: '7px', marginBottom: '10px' }}>
+                                        <div style={{ width: '44px', height: '44px', marginRight: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {sekolah?.logo ? <img src={sekolah.logo} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Logo" /> : null}
                                         </div>
-                                        <div className="text-center mb-5 shrink-0">
-                                            <h2 className="text-[11px] font-black underline underline-offset-2 tracking-wide text-slate-900">SURAT KETERANGAN BEBAS PUSTAKA</h2>
+                                        <div style={{ flex: 1, textAlign: 'center' }}>
+                                            <h1 style={{ fontSize: '12px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.4px', lineHeight: 1.2, color: '#0f172a', margin: 0 }}>
+                                                {sekolah?.nama || 'PERPUSTAKAAN SEKOLAH'}
+                                            </h1>
+                                            <p style={{ fontSize: '8px', fontWeight: 700, color: '#334155', margin: '2.5px 0 0 0' }}>{sekolah?.alamat || '-'}</p>
+                                            <p style={{ fontSize: '7.5px', fontWeight: 700, color: '#334155', margin: '1.5px 0 0 0' }}>
+                                                Pos-el: {sekolah?.email || '-'} {sekolah?.npp ? `| NPP: ${sekolah.npp}` : ''}
+                                            </p>
                                         </div>
                                     </div>
+
+                                    {/* === 2. JUDUL SURAT === */}
+                                    <div style={{ textAlign: 'center', marginBottom: '12px' }}>
+                                        <h2 style={{ fontSize: '11px', fontWeight: 900, textDecoration: 'underline', textUnderlineOffset: '2.5px', letterSpacing: '0.5px', color: '#0f172a', margin: 0 }}>
+                                            SURAT KETERANGAN BEBAS PUSTAKA
+                                        </h2>
+                                    </div>
                                     
-                                    {/* --- BODY TEKS --- */}
-                                    <div className="text-[10px] text-justify leading-relaxed text-slate-800 flex-1">
-                                        <p className="mb-2">Yang bertanda tangan di bawah ini Kepala Perpustakaan menerangkan bahwa:</p>
-                                        <table className="w-full mb-3 ml-3 text-[10px]">
+                                    {/* === 3. ISI SURAT (SESUAI KAIDAH TATA NASKAH DINAS) === */}
+                                    <div style={{ fontSize: '10px', textAlign: 'justify', lineHeight: 1.55, color: '#1e293b' }}>
+                                        <p style={{ margin: '0 0 8px 0' }}>
+                                            Yang bertanda tangan di bawah ini, Kepala {sekolah?.nama || 'Perpustakaan'}, menerangkan bahwa:
+                                        </p>
+                                        <table style={{ width: '100%', marginBottom: '10px', marginLeft: '10px', fontSize: '10px', borderCollapse: 'collapse' }}>
                                             <tbody>
-                                                <tr><td className="w-16 font-bold align-top pb-1.5">Nama</td><td className="w-3 align-top">:</td><td className="font-bold uppercase pb-1.5">{s.nama}</td></tr>
-                                                <tr><td className="font-bold align-top pb-1.5">NISN</td><td className="align-top">:</td><td className="pb-1.5">{s.nisn || '-'}</td></tr>
-                                                <tr><td className="font-bold align-top pb-1.5">Kelas</td><td className="align-top">:</td><td className="pb-1.5 uppercase">{klsFormat}</td></tr>
+                                                <tr>
+                                                    <td style={{ width: '58px', fontWeight: 700, paddingBottom: '3.5px', verticalAlign: 'top' }}>Nama</td>
+                                                    <td style={{ width: '10px', verticalAlign: 'top' }}>:</td>
+                                                    <td style={{ fontWeight: 800, textTransform: 'uppercase', paddingBottom: '3.5px', color: '#0f172a' }}>{s.nama}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td style={{ fontWeight: 700, paddingBottom: '3.5px', verticalAlign: 'top' }}>NISN</td>
+                                                    <td style={{ verticalAlign: 'top' }}>:</td>
+                                                    <td style={{ paddingBottom: '3.5px', fontWeight: 600 }}>{s.nisn || '-'}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td style={{ fontWeight: 700, paddingBottom: '3.5px', verticalAlign: 'top' }}>Kelas</td>
+                                                    <td style={{ verticalAlign: 'top' }}>:</td>
+                                                    <td style={{ textTransform: 'uppercase', paddingBottom: '3.5px', fontWeight: 600 }}>{klsFormat}</td>
+                                                </tr>
                                             </tbody>
                                         </table>
-                                        <p className="leading-snug mb-2">Siswa tersebut di atas telah mengembalikan seluruh pinjaman buku dan dinyatakan <b className="font-black">BEBAS TANGGUNGAN</b> pada Perpustakaan {sekolah?.nama || 'Sekolah'}.</p>
-                                        <p className="leading-snug">Surat keterangan ini diberikan sebagai salah satu syarat untuk keperluan administrasi / pengambilan Ijazah.</p>
+                                        <p style={{ margin: '0 0 7px 0', lineHeight: 1.5 }}>
+                                            Berdasarkan data sirkulasi perpustakaan, siswa tersebut di atas telah mengembalikan seluruh pinjaman koleksi buku dan dinyatakan <b style={{ fontWeight: 900, color: '#0f172a' }}>BEBAS TANGGUNGAN PUSTAKA</b>.
+                                        </p>
+                                        <p style={{ margin: 0, lineHeight: 1.5 }}>
+                                            Demikian surat keterangan ini dibuat dengan sebenarnya untuk dapat dipergunakan sebagai kelengkapan persyaratan administrasi sekolah.
+                                        </p>
                                     </div>
                                     
-                                    {/* --- FOOTER TANDA TANGAN --- */}
-                                    <div className="flex justify-end shrink-0">
-                                        <div className="text-center w-52 text-slate-800">
-                                            <p className="text-[10px] mb-1">{config.tempat}, {config.tanggal}</p>
-                                            <p className="text-[10px] mb-12">Kepala Perpustakaan,</p>
-                                            {/* NAMA KEPALA dan NIP LANGSUNG DARI ADMIN */}
-                                            <p className="text-[10px] font-black underline underline-offset-2 uppercase">{sekolah?.kepalaPerpustakaan || sekolah?.kepalaPerpus || '_______________________'}</p>
-                                            <p className="text-[9px] font-bold mt-1">NIP. {String(sekolah?.nipKepala || '_________________').replace(/NIP\.?\s*/i, '')}</p>
+                                    {/* === 4. FOOTER TANDA TANGAN & QR CODE (JARAK PROPORSIONAL 16px DARI TEKS) === */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', width: '100%', marginTop: '18px' }}>
+                                        {/* Kotak Segel Validasi QR */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', border: '1px solid #94a3b8', borderRadius: '6px', padding: '3.5px', backgroundColor: '#f8fafc', flexShrink: 0 }}>
+                                            {qrDataUrl && <img src={qrDataUrl} alt="QR" style={{ width: '44px', height: '44px', objectFit: 'contain', backgroundColor: '#fff', borderRadius: '3px' }} />}
+                                            <div style={{ fontSize: '6.5px', lineHeight: '1.2', color: '#334155', width: '64px', textAlign: 'left' }}>
+                                                <div style={{ fontWeight: 900, color: '#0f172a' }}>SEGEL VALIDASI</div>
+                                                <div style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '8px', color: '#312e81', margin: '1.5px 0' }}>#{tokenResmi}</div>
+                                                <div style={{ fontSize: '5.5px', color: '#64748b' }}>Pindai QR untuk cek keaslian data.</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Kolom Pengesahan Kepala Perpustakaan */}
+                                        <div style={{ textAlign: 'center', color: '#0f172a', flex: 1, paddingLeft: '8px' }}>
+                                            <p style={{ fontSize: '9.5px', margin: '0 0 2px 0' }}>{config.tempat}, {config.tanggal}</p>
+                                            <p style={{ fontSize: '9.5px', fontWeight: 600, margin: '0 0 36px 0' }}>Kepala Perpustakaan,</p>
+                                            <p style={{ fontSize: '9.5px', fontWeight: 900, textDecoration: 'underline', textUnderlineOffset: '2px', whiteSpace: 'nowrap', margin: 0 }}>
+                                                {formatNamaGelarPintar(sekolah?.kepalaPerpustakaan || sekolah?.kepalaPerpus || '_______________________')}
+                                            </p>
+                                            <p style={{ fontSize: '8.5px', fontWeight: 700, margin: '2.5px 0 0 0', whiteSpace: 'nowrap' }}>
+                                                NIP. {String(sekolah?.nipKepala || '_________________').replace(/NIP\.?\s*/i, '')}
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
-                            )
+                            );
                         })}
                     </div>
                 ))}
@@ -4497,13 +5168,14 @@ const SuratBebasView = ({ anggota, peminjaman, sekolah }) => {
     );
 };
 
+
 const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAlert, showConfirm, sekolah }) => {
             const [sA, setSA] = useState(null);
             const [sQ, setSQ] = useState('');
             const [sD, setSD] = useState(false);
             const [vC, setVC] = useState('');
             const [showSplash, setShowSplash] = useState(false);
-
+            const [scanMode, setScanMode] = useState(null);
             const identitasRef = useRef(null);
             const barcodeRef = useRef(null);
 
@@ -4551,10 +5223,10 @@ const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAle
                 }, 1000);
             };
 
-            // 5. Validasi Scan Barcode (Mencegah buku tertukar)
-            const hVS = e => {
-                e.preventDefault();
-                const sC = vC.trim().toUpperCase();
+            // 5. Validasi Scan Barcode (Mendukung Scanner Kasir & Auto-Submit Kamera HP)
+            const hVS = (e, scannedCode = null) => {
+                if (e && e.preventDefault) e.preventDefault();
+                const sC = (scannedCode !== null ? scannedCode : vC).trim().toUpperCase();
                 if (!sC) return;
                 
                 const cbFocus = () => setTimeout(() => barcodeRef.current?.focus(), 100);
@@ -4580,7 +5252,8 @@ const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAle
                 if (loanRecord.idAnggota === sA.id) {
                     pR(loanRecord); // Lolos, langsung kembalikan
                 } else {
-                    // Buku milik siswa lain! Tampilkan Notifikasi Interaktif
+                    // Matikan kamera sejenak jika buku tertukar agar petugas melihat peringatan dengan jelas
+                    setScanMode(null);
                     const actualBorrower = anggota.find(a => a.id === loanRecord.idAnggota);
                     const kls = actualBorrower ? (actualBorrower.kategori === 'Siswa' ? formatKelasSiswa(actualBorrower, sekolah?.daftarJurusan) : actualBorrower.kategori) : '-';
                     const namaAsli = actualBorrower ? actualBorrower.nama : 'Tidak diketahui';
@@ -4594,7 +5267,7 @@ const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAle
                     setVC('');
                 }
             };
-
+            
             return (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
                     <div className="lg:col-span-1 bg-white p-6 md:p-8 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-fit border border-slate-100/50">
@@ -4615,29 +5288,39 @@ const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAle
                                         <button type="button" onClick={() => { setSA(null); setTimeout(() => identitasRef.current?.focus(), 100); }} className="w-8 h-8 bg-white text-rose-500 rounded-full my-auto shadow-sm hover:scale-110 transition-transform"><i className="fas fa-times"></i></button>
                                     </div>
                                 ) : (
-                                    <div className="relative">
-                                        <i className="fas fa-search absolute left-4 top-3.5 text-emerald-400"></i>
-                                        <input ref={identitasRef} type="text" placeholder="Ketik Nama/Scan NISN..." className="input-field pl-11 shadow-inner focus:ring-4 focus:ring-emerald-100 transition-all border-emerald-100" value={sQ} onChange={hSC} onFocus={() => setSD(true)} onBlur={() => setTimeout(() => setSD(false), 200)} />
-                                        {sD && sQ.length > 1 && (
-                                            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl max-h-60 overflow-y-auto z-50 border border-slate-100 p-2">
-                                                {fA.length === 0 ? <p className="text-center text-xs font-bold text-slate-400 py-4">Tidak ditemukan</p> : fA.map(a => (
-                                                    <div key={a.id} onMouseDown={(e) => { e.preventDefault(); setSA(a); setSQ(''); setSD(false); setTimeout(() => barcodeRef.current?.focus(), 100); }} className="p-3 hover:bg-emerald-50 cursor-pointer flex items-center gap-3 rounded-xl transition-colors">
-                                                        <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 flex items-center justify-center border border-slate-200">
-                                                            {a.foto ? <img src={a.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-slate-400"></i>}
+                                    <div className="relative flex gap-2">
+                                        <div className="relative flex-1">
+                                            <i className="fas fa-search absolute left-4 top-3.5 text-emerald-400"></i>
+                                            <input ref={identitasRef} type="text" placeholder="Ketik Nama/Scan NISN..." className="input-field pl-11 shadow-inner focus:ring-4 focus:ring-emerald-100 transition-all border-emerald-100" value={sQ} onChange={hSC} onFocus={() => setSD(true)} onBlur={() => setTimeout(() => setSD(false), 200)} />
+                                            {sD && sQ.length > 1 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl max-h-60 overflow-y-auto z-50 border border-slate-100 p-2">
+                                                    {fA.length === 0 ? <p className="text-center text-xs font-bold text-slate-400 py-4">Tidak ditemukan</p> : fA.map(a => (
+                                                        <div key={a.id} onMouseDown={(e) => { e.preventDefault(); setSA(a); setSQ(''); setSD(false); setTimeout(() => barcodeRef.current?.focus(), 100); }} className="p-3 hover:bg-emerald-50 cursor-pointer flex items-center gap-3 rounded-xl transition-colors">
+                                                            <div className="w-8 h-8 rounded-full bg-slate-100 overflow-hidden flex-shrink-0 flex items-center justify-center border border-slate-200">
+                                                                {a.foto ? <img src={a.foto} alt="Foto" className="w-full h-full object-cover" /> : <i className="fas fa-user text-slate-400"></i>}
+                                                            </div>
+                                                            <div><p className="font-black text-slate-800 leading-tight">{a.nama}</p><p className="text-[10px] font-bold text-emerald-500 uppercase">{a.kategori === 'Siswa' ? formatKelasSiswa(a, sekolah?.daftarJurusan) : a.kategori}</p></div>
                                                         </div>
-                                                        <div><p className="font-black text-slate-800 leading-tight">{a.nama}</p><p className="text-[10px] font-bold text-emerald-500 uppercase">{a.kategori === 'Siswa' ? formatKelasSiswa(a, sekolah?.daftarJurusan) : a.kategori}</p></div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <button type="button" onClick={() => setScanMode('anggota')} className="px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl shadow-md shrink-0 transition-transform active:scale-95" title="Scan Kartu Anggota via HP">
+                                            <i className="fas fa-camera text-lg"></i>
+                                        </button>
                                     </div>
                                 )}
                             </div>
-
+                            
                             {/* KOTAK 2: SCAN BARCODE BUKU */}
                             <form onSubmit={hVS}>
                                 <label className="block text-sm font-bold mb-1.5 text-slate-700">Scan Barcode Buku Paket</label>
-                                <input id="barcodeKembaliPaket" ref={barcodeRef} type="text" className="input-field border-emerald-300 bg-emerald-50 font-mono font-bold text-lg shadow-inner focus:ring-4 focus:ring-emerald-200 transition-all text-emerald-900" value={vC} onChange={e => setVC(e.target.value)} disabled={!sA} placeholder={sA ? "Scan di sini..." : "Pilih Peminjam Dahulu"} />
+                                <div className="flex gap-2">
+                                    <input id="barcodeKembaliPaket" ref={barcodeRef} type="text" className="input-field border-emerald-300 bg-emerald-50 font-mono font-bold text-lg shadow-inner focus:ring-4 focus:ring-emerald-200 transition-all text-emerald-900" value={vC} onChange={e => setVC(e.target.value)} disabled={!sA} placeholder={sA ? "Scan di sini..." : "Pilih Peminjam Dahulu"} />
+                                    <button type="button" disabled={!sA} onClick={() => setScanMode('buku')} className="px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-2xl shadow-md shrink-0 transition-transform active:scale-95" title="Scan Tumpukan Buku Paket via HP">
+                                        <i className="fas fa-camera text-lg"></i>
+                                    </button>
+                                </div>
                                 <button type="submit" disabled={!sA} className="btn-primary w-full py-4 text-lg shadow-lg mt-5 disabled:opacity-50 disabled:cursor-not-allowed transition-all bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500">Proses Kembalikan</button>
                             </form>
                         </div>
@@ -4689,15 +5372,313 @@ const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAle
                             </div>
                         </div>
                     )}
+                    <FastScannerModal 
+                        isOpen={!!scanMode} 
+                        onClose={() => setScanMode(null)} 
+                        title={scanMode === 'anggota' ? 'Scan Kartu Siswa' : `Scan Paket: ${sA?.nama || ''}`}
+                        continuous={scanMode === 'buku'} // Mode beruntun aktif untuk pengembalian banyak buku paket!
+                        onDetected={(code) => {
+                            if (scanMode === 'anggota') {
+                                hSC({ target: { value: code } });
+                            } else if (scanMode === 'buku') {
+                                setVC(code);
+                                hVS(null, code); // Langsung validasi kepemilikan & kembalikan stok otomatis!
+                            }
+                        }} 
+                    />
+                </div>
+            );
+        };
+const AnalitikAkreditasiView = ({ buku, anggota, peminjaman, kehadiran, sekolah }) => {
+            const [tahunFilter, setTahunFilter] = useState(new Date().getFullYear().toString());
+            const chartTrenRef = useRef(null);
+            const chartDDCRef = useRef(null);
+            const chartJurusanRef = useRef(null);
+            const chartInstances = useRef({});
+
+            // Statistik Koleksi & Indikator Akreditasi Perpusnas
+            const stats = useMemo(() => {
+                const koleksiAktif = buku.filter(b => b.status !== 'Direduksi');
+                const totalJudul = koleksiAktif.length;
+                const totalEksemplar = koleksiAktif.reduce((acc, b) => acc + (parseInt(b.stockAwal) || parseInt(b.stock) || 1), 0);
+                const totalNilaiAset = koleksiAktif.reduce((acc, b) => acc + ((parseInt(b.hargaSatuan) || 0) * (parseInt(b.stockAwal) || parseInt(b.stock) || 1)), 0);
+
+                const anggotaAktif = anggota.filter(a => a.status === 'Aktif');
+                const totalSiswa = anggotaAktif.filter(a => a.kategori === 'Siswa').length || 1;
+
+                // Standar Perpusnas: Rasio kecukupan buku minimal 1:3 (3 buku per siswa), Persentase Fiksi vs Non-Fiksi (DDC 800 vs Lainnya)
+                const rasioEksemplarPerSiswa = (totalEksemplar / totalSiswa).toFixed(2);
+                const judulNonFiksi = koleksiAktif.filter(b => !String(b.klasifikasiDDC || '').startsWith('800')).length;
+                const persenNonFiksi = totalJudul > 0 ? Math.round((judulNonFiksi / totalJudul) * 100) : 0;
+
+                // Tren Bulanan (12 Bulan di Tahun Terpilih)
+                const bulanLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                const kunjunganBulanan = Array(12).fill(0);
+                const pinjamBulanan = Array(12).fill(0);
+
+                kehadiran.forEach(k => {
+                    if (k.tanggal && k.tanggal.startsWith(tahunFilter)) {
+                        const m = parseInt(k.tanggal.substring(5, 7), 10) - 1;
+                        if (m >= 0 && m < 12) kunjunganBulanan[m]++;
+                    }
+                });
+
+                peminjaman.forEach(p => {
+                    if (p.tglPinjam && p.tglPinjam.startsWith(tahunFilter)) {
+                        const m = parseInt(p.tglPinjam.substring(5, 7), 10) - 1;
+                        if (m >= 0 && m < 12) pinjamBulanan[m]++;
+                    }
+                });
+
+                // Distribusi Klasifikasi DDC (000 - 900)
+                const ddcMap = { '000': 0, '100': 0, '200': 0, '300': 0, '400': 0, '500': 0, '600': 0, '700': 0, '800': 0, '900': 0 };
+                koleksiAktif.forEach(b => {
+                    const code = getDDC(b.klasifikasiDDC);
+                    if (ddcMap[code] !== undefined) ddcMap[code]++;
+                    else ddcMap['000']++;
+                });
+
+                // Rasio Kunjungan & Peminjaman per Jurusan
+                const jurusanMap = {};
+                (sekolah?.daftarJurusan || DEFAULT_JURUSAN).forEach(j => { jurusanMap[j.singkatan] = 0; });
+                kehadiran.forEach(k => {
+                    if (k.kategori === 'Siswa' && k.tanggal?.startsWith(tahunFilter)) {
+                        const singkatan = getSingkatanJurusan(k.jurusan, sekolah?.daftarJurusan) || 'Lainnya';
+                        jurusanMap[singkatan] = (jurusanMap[singkatan] || 0) + 1;
+                    }
+                });
+
+                // Top 10 Duta Literasi (Gabungan Kunjungan + Peminjaman di Tahun Terpilih)
+                const skorSiswa = {};
+                kehadiran.forEach(k => {
+                    if (k.tanggal?.startsWith(tahunFilter) && k.idAnggota) {
+                        if (!skorSiswa[k.idAnggota]) skorSiswa[k.idAnggota] = { hadir: 0, pinjam: 0 };
+                        skorSiswa[k.idAnggota].hadir++;
+                    }
+                });
+                peminjaman.forEach(p => {
+                    if (p.tglPinjam?.startsWith(tahunFilter) && !p.isPaket && p.idAnggota) {
+                        if (!skorSiswa[p.idAnggota]) skorSiswa[p.idAnggota] = { hadir: 0, pinjam: 0 };
+                        skorSiswa[p.idAnggota].pinjam++;
+                    }
+                });
+
+                const dutaLiterasi = Object.entries(skorSiswa)
+                    .map(([id, s]) => {
+                        const u = anggota.find(a => a.id === id);
+                        if (!u || u.kategori !== 'Siswa') return null;
+                        return { user: u, hadir: s.hadir, pinjam: s.pinjam, totalSkor: (s.pinjam * 2) + s.hadir };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => b.totalSkor - a.totalSkor)
+                    .slice(0, 10);
+
+                return {
+                    totalJudul, totalEksemplar, totalNilaiAset, totalSiswa,
+                    rasioEksemplarPerSiswa, persenNonFiksi,
+                    bulanLabels, kunjunganBulanan, pinjamBulanan,
+                    ddcMap, jurusanMap, dutaLiterasi,
+                    totalKunjunganTahun: kunjunganBulanan.reduce((a, b) => a + b, 0),
+                    totalPinjamTahun: pinjamBulanan.reduce((a, b) => a + b, 0)
+                };
+            }, [buku, anggota, peminjaman, kehadiran, tahunFilter, sekolah]);
+
+            // Render Grafik Chart.js
+            useEffect(() => {
+                if (!window.Chart) return;
+                Object.values(chartInstances.current).forEach(c => c?.destroy());
+
+                if (chartTrenRef.current) {
+                    chartInstances.current.tren = new Chart(chartTrenRef.current, {
+                        type: 'bar',
+                        data: {
+                            labels: stats.bulanLabels,
+                            datasets: [
+                                { label: 'Kunjungan', data: stats.kunjunganBulanan, backgroundColor: '#6366f1', borderRadius: 6 },
+                                { label: 'Peminjaman Buku', data: stats.pinjamBulanan, backgroundColor: '#10b981', borderRadius: 6 }
+                            ]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
+                    });
+                }
+
+                if (chartDDCRef.current) {
+                    chartInstances.current.ddc = new Chart(chartDDCRef.current, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['000 Umum', '100 Filsafat', '200 Agama', '300 Sosial', '400 Bahasa', '500 Sains', '600 Teknologi', '700 Seni', '800 Sastra', '900 Sejarah'],
+                            datasets: [{
+                                data: Object.values(stats.ddcMap),
+                                backgroundColor: ['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#3b82f6', '#f97316', '#14b8a6', '#64748b']
+                            }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } } }
+                    });
+                }
+
+                if (chartJurusanRef.current) {
+                    chartInstances.current.jurusan = new Chart(chartJurusanRef.current, {
+                        type: 'bar',
+                        data: {
+                            labels: Object.keys(stats.jurusanMap),
+                            datasets: [{ label: 'Kunjungan per Jurusan', data: Object.values(stats.jurusanMap), backgroundColor: '#8b5cf6', borderRadius: 6 }]
+                        },
+                        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                    });
+                }
+
+                return () => Object.values(chartInstances.current).forEach(c => c?.destroy());
+            }, [stats]);
+
+            const exportExcelAkreditasi = () => {
+                const wb = XLSX.utils.book_new();
+                const ringkasan = [
+                    { "Indikator Akreditasi Perpusnas": "Total Judul Koleksi Aktif", "Nilai": stats.totalJudul, "Standar Minimal": "Min. 1.000 Judul" },
+                    { "Indikator Akreditasi Perpusnas": "Total Eksemplar Fisik", "Nilai": stats.totalEksemplar, "Standar Minimal": "Min. 1.500 Eksemplar" },
+                    { "Indikator Akreditasi Perpusnas": "Rasio Eksemplar per Siswa", "Nilai": `${stats.rasioEksemplarPerSiswa} Buku/Siswa`, "Standar Minimal": "Ideal >= 3 Buku/Siswa" },
+                    { "Indikator Akreditasi Perpusnas": "Persentase Koleksi Non-Fiksi (Pengayaan/Referensi)", "Nilai": `${stats.persenNonFiksi}%`, "Standar Minimal": "Ideal 60% - 70%" },
+                    { "Indikator Akreditasi Perpusnas": "Estimasi Nilai Aset Koleksi", "Nilai": `Rp ${stats.totalNilaiAset.toLocaleString('id-ID')}`, "Standar Minimal": "-" },
+                    { "Indikator Akreditasi Perpusnas": `Total Kunjungan Tahun ${tahunFilter}`, "Nilai": stats.totalKunjunganTahun, "Standar Minimal": "-" },
+                    { "Indikator Akreditasi Perpusnas": `Total Sirkulasi Peminjaman Tahun ${tahunFilter}`, "Nilai": stats.totalPinjamTahun, "Standar Minimal": "-" }
+                ];
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ringkasan), "Indikator Akreditasi");
+                XLSX.writeFile(wb, `Laporan_Akreditasi_Lokabaca_${tahunFilter}.xlsx`);
+            };
+
+            return (
+                <div className="space-y-6">
+                    {/* Header Analitik */}
+                    <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
+                        <div>
+                            <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                                <i className="fas fa-chart-pie text-indigo-600"></i> Analitik & Borang Akreditasi Perpustakaan
+                            </h2>
+                            <p className="text-sm font-bold text-slate-500 mt-1">Data statistik otomatis sesuai instrumen akreditasi Perpusnas RI</p>
+                        </div>
+                        <div className="flex flex-wrap gap-3 items-center">
+                            <select className="input-field w-36 py-2.5 font-black text-indigo-700 bg-indigo-50" value={tahunFilter} onChange={e => setTahunFilter(e.target.value)}>
+                                {[0, 1, 2, 3].map(offset => {
+                                    const yr = (new Date().getFullYear() - offset).toString();
+                                    return <option key={yr} value={yr}>Tahun {yr}</option>;
+                                })}
+                            </select>
+                            <button onClick={exportExcelAkreditasi} className="btn-secondary text-emerald-600 border-emerald-200"><i className="fas fa-file-excel mr-2"></i> Unduh Excel</button>
+                            <button onClick={() => window.print()} className="btn-primary"><i className="fas fa-print mr-2"></i> Cetak Borang PDF</button>
+                        </div>
+                    </div>
+
+                    {/* Kartu Indikator Standar Akreditasi */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 print:hidden">
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Koleksi (Judul / Eksemplar)</p>
+                            <h3 className="text-2xl font-black text-slate-800 mt-1">{stats.totalJudul} <span className="text-sm font-bold text-indigo-500">/ {stats.totalEksemplar} Eks</span></h3>
+                            <p className="text-[11px] font-bold text-emerald-600 mt-2"><i className="fas fa-check-circle mr-1"></i>Non-Fiksi: {stats.persenNonFiksi}% (Ideal 60-70%)</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Rasio Kecukupan Koleksi</p>
+                            <h3 className="text-2xl font-black text-indigo-600 mt-1">1 : {stats.rasioEksemplarPerSiswa}</h3>
+                            <p className="text-[11px] font-bold text-slate-500 mt-2">({stats.totalEksemplar} Buku untuk {stats.totalSiswa} Siswa Aktif)</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sirkulasi & Kunjungan ({tahunFilter})</p>
+                            <h3 className="text-2xl font-black text-emerald-600 mt-1">{stats.totalKunjunganTahun} <span className="text-sm font-bold text-slate-500">Hadir</span></h3>
+                            <p className="text-[11px] font-bold text-indigo-600 mt-2"><i className="fas fa-book-reader mr-1"></i>Total Dipinjam: {stats.totalPinjamTahun} Trx</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Valuasi Aset Koleksi</p>
+                            <h3 className="text-xl font-black text-amber-600 mt-1">Rp {stats.totalNilaiAset.toLocaleString('id-ID')}</h3>
+                            <p className="text-[11px] font-bold text-slate-400 mt-2">Berdasarkan harga satuan buku</p>
+                        </div>
+                    </div>
+
+                    {/* Visualisasi Grafik Chart.js */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:hidden">
+                        <div className="lg:col-span-2 bg-white p-6 rounded-[2rem] shadow-sm">
+                            <h3 className="font-black text-slate-800 mb-4 text-sm uppercase tracking-wider">Tren Kunjungan & Peminjaman Bulanan ({tahunFilter})</h3>
+                            <div className="h-72"><canvas ref={chartTrenRef}></canvas></div>
+                        </div>
+                        <div className="bg-white p-6 rounded-[2rem] shadow-sm">
+                            <h3 className="font-black text-slate-800 mb-4 text-sm uppercase tracking-wider">Proporsi Klasifikasi DDC</h3>
+                            <div className="h-72"><canvas ref={chartDDCRef}></canvas></div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:hidden">
+                        <div className="bg-white p-6 rounded-[2rem] shadow-sm">
+                            <h3 className="font-black text-slate-800 mb-4 text-sm uppercase tracking-wider">Tingkat Kunjungan per Kompetensi Keahlian (Jurusan)</h3>
+                            <div className="h-72"><canvas ref={chartJurusanRef}></canvas></div>
+                        </div>
+                        <div className="bg-white p-6 rounded-[2rem] shadow-sm flex flex-col">
+                            <h3 className="font-black text-slate-800 mb-4 text-sm uppercase tracking-wider"><i className="fas fa-medal text-amber-500 mr-2"></i>Top 10 Duta Literasi Sekolah ({tahunFilter})</h3>
+                            <div className="overflow-y-auto max-h-72 custom-scrollbar pr-2 space-y-2">
+                                {stats.dutaLiterasi.map((d, i) => (
+                                    <div key={d.user.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                        <div className="flex items-center gap-3">
+                                            <span className="w-7 h-7 rounded-lg bg-indigo-600 text-white font-black text-xs flex items-center justify-center">#{i + 1}</span>
+                                            <div>
+                                                <p className="font-black text-slate-800 text-sm">{d.user.nama}</p>
+                                                <p className="text-[10px] font-bold text-indigo-500 uppercase">{formatKelasSiswa(d.user, sekolah?.daftarJurusan)}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right text-xs font-bold text-slate-600">
+                                            <span className="text-emerald-600 font-black">{d.pinjam} Pinjam</span> • <span>{d.hadir} Hadir</span>
+                                        </div>
+                                    </div>
+                                ))}
+                                {stats.dutaLiterasi.length === 0 && <p className="text-center text-slate-400 font-bold py-12">Belum ada aktivitas siswa di tahun {tahunFilter}.</p>}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Area Cetak Resmi Borang Akreditasi (Muncul Saat Ctrl+P / Cetak PDF) */}
+                    <div id="print-area" className="hidden print:block bg-white text-black p-8">
+                        <KopSurat sekolah={sekolah} />
+                        <h2 style={{ textAlign: 'center', fontSize: '14pt', fontWeight: 'bold', textTransform: 'uppercase', margin: '15px 0 5px' }}>
+                            LAPORAN EKSEKUTIF & BORANG AKREDITASI PERPUSTAKAAN
+                        </h2>
+                        <p style={{ textAlign: 'center', fontSize: '10pt', marginBottom: '20px' }}>Tahun Pelaporan: <b>{tahunFilter}</b></p>
+
+                        <h4 style={{ fontSize: '11pt', fontWeight: 'bold', marginBottom: '8px' }}>A. Statistik Koleksi & Indikator Standar Nasional (SNP)</h4>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10pt', marginBottom: '20px' }} border="1">
+                            <thead>
+                                <tr style={{ backgroundColor: '#f0f0f0' }}>
+                                    <th style={{ border: '1px solid #000', padding: '6px' }}>Komponen Instrumen</th>
+                                    <th style={{ border: '1px solid #000', padding: '6px', textAlign: 'center' }}>Capaian Riil</th>
+                                    <th style={{ border: '1px solid #000', padding: '6px' }}>Keterangan / Acuan Standar</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td style={{ border: '1px solid #000', padding: '6px' }}>Total Koleksi Buku (Judul / Eksemplar)</td><td style={{ border: '1px solid #000', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{stats.totalJudul} Judul / {stats.totalEksemplar} Eks</td><td style={{ border: '1px solid #000', padding: '6px' }}>Non-Fiksi: {stats.persenNonFiksi}%</td></tr>
+                                <tr><td style={{ border: '1px solid #000', padding: '6px' }}>Rasio Buku per Siswa Aktif</td><td style={{ border: '1px solid #000', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>1 : {stats.rasioEksemplarPerSiswa}</td><td style={{ border: '1px solid #000', padding: '6px' }}>Total Siswa Aktif: {stats.totalSiswa} Siswa</td></tr>
+                                <tr><td style={{ border: '1px solid #000', padding: '6px' }}>Total Kunjungan Pemustaka ({tahunFilter})</td><td style={{ border: '1px solid #000', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{stats.totalKunjunganTahun} Kunjungan</td><td style={{ border: '1px solid #000', padding: '6px' }}>Rerata: {Math.round(stats.totalKunjunganTahun / 12)} / bulan</td></tr>
+                                <tr><td style={{ border: '1px solid #000', padding: '6px' }}>Total Sirkulasi Peminjaman ({tahunFilter})</td><td style={{ border: '1px solid #000', padding: '6px', textAlign: 'center', fontWeight: 'bold' }}>{stats.totalPinjamTahun} Transaksi</td><td style={{ border: '1px solid #000', padding: '6px' }}>Nilai Aset: Rp {stats.totalNilaiAset.toLocaleString('id-ID')}</td></tr>
+                            </tbody>
+                        </table>
+
+                        <h4 style={{ fontSize: '11pt', fontWeight: 'bold', marginBottom: '8px' }}>B. Distribusi Koleksi Berdasarkan Kelas DDC (000 - 900)</h4>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9pt', marginBottom: '20px' }} border="1">
+                            <thead>
+                                <tr style={{ backgroundColor: '#f0f0f0' }}>
+                                    {Object.keys(stats.ddcMap).map(k => <th key={k} style={{ border: '1px solid #000', padding: '5px', textAlign: 'center' }}>Kelas {k}</th>)}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    {Object.values(stats.ddcMap).map((v, idx) => <td key={idx} style={{ border: '1px solid #000', padding: '5px', textAlign: 'center', fontWeight: 'bold' }}>{v} Judul</td>)}
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <TandaTangan sekolah={sekolah} />
+                    </div>
                 </div>
             );
         };
 
-
         const App = () => {
             const [pSisaItems, setPSisaItems] = useState([]);
             const [fbU, setFbU] = useState(null);
-            const [cU, setCU] = useState(() => { try { const s = sessionStorage.getItem('perpus_current_user'); return s ? JSON.parse(s) : null } catch (e) { return null } });
+            const [cU, setCU] = useState(() => { try { const s = sessionStorage.getItem('perpus_current_user'); return s ? JSON.parse(atob(s)) : null } catch (e) { return null } });
             const [aT, setAT] = useState(() => localStorage.getItem('perpus_active_tab') || 'dashboard');
             
             useEffect(() => { if (aT) localStorage.setItem('perpus_active_tab', aT) }, [aT]);
@@ -5001,6 +5982,7 @@ const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAle
                                     <NI icon={<i className="fas fa-barcode text-yellow-300"></i>} label="Label Barcode" id="label" />
                                     <NI icon={<i className="fas fa-id-badge text-violet-400"></i>} label="Kartu Anggota" id="kartu" />
                                     <NI icon={<i className="fas fa-file-contract text-emerald-300"></i>} label="Surat Bebas Pustaka" id="surat_bebas" />
+                                    <NI icon={<i className="fas fa-chart-pie text-emerald-400"></i>} label="Analitik & Akreditasi" id="analitik" />    
                                 </>
                             )}
                             {cU.role !== 'petugas' && <NI icon={<i className="fas fa-calendar-check text-emerald-400"></i>} label="Daftar Hadir" id="hadir" />}
@@ -5047,6 +6029,7 @@ const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAle
                         <div className={`flex-1 overflow-auto custom-scrollbar ${iFS ? 'p-4' : 'p-8'}`}>
                             <div className={`mx-auto ${iFS ? 'max-w-full h-full' : 'max-w-[90rem] space-y-8 pb-10'}`}>
                                 {aT === 'dashboard' && <DashboardView anggota={anggota} buku={buku} peminjaman={peminjaman} kehadiran={kehadiran} sekolah={sekolah} onUserClick={setSBiodata} />}
+                                {aT === 'analitik' && <AnalitikAkreditasiView buku={buku} anggota={anggota} peminjaman={peminjaman} kehadiran={kehadiran} sekolah={sekolah} />}
                                 {aT === 'anggota' && <AnggotaView data={anggota} onAdd={d => aD('anggota', d)} onUpdate={(i, d) => uD('anggota', i, d)} onDelete={i => sC('Hapus', 'Yakin?', () => dD('anggota', i))} onDeleteMany={is => is.forEach(i => dD('anggota', i))} showAlert={sA} showConfirm={sC} filter={fA} setFilter={setFA} onPrint={hP} sekolah={sekolah} onUpdatePengaturan={uS} />}
                                 {aT === 'buku' && <BukuView data={buku} peminjaman={peminjaman} onAdd={d => aD('buku', d)} onUpdate={(i, d) => uD('buku', i, d)} onDelete={i => sC('Hapus', 'Yakin?', () => dD('buku', i))} showAlert={sA} onPrint={hP} filter={fBuku} setFilter={setFBuku} />}
                                 {aT === 'audit' && <AuditEksemplarView buku={buku} peminjaman={peminjaman} anggota={anggota} sekolah={sekolah} onPrintSisa={items => { setPSisaItems(items); setPM('label_sisa'); }} />}
@@ -5059,7 +6042,7 @@ const KembaliPaketView = ({ data, anggota, buku, onUpdate, onUpdateBuku, showAle
                                 {aT === 'buku_hilang' && <BukuHilangView data={peminjaman} anggota={anggota} buku={buku} onUpdate={(i, d) => uD('peminjaman', i, d)} onUpdateBuku={uD} onPrintHilang={items => { setPHilangItems(items); hP('label_hilang'); }} showAlert={sA} showConfirm={sC} />}
                                 {aT === 'rekap' && <RekapView kehadiran={kehadiran} peminjaman={peminjaman} anggota={anggota} onPrint={hP} filter={fR} setFilter={setFR} sekolah={sekolah} />}
                                 {aT === 'rekap_paket' && <RekapPaketView anggota={anggota} peminjaman={peminjaman} onPrint={hP} filter={fP} setFilter={setFP} sekolah={sekolah} />}
-                                {aT === 'administrasi' && <AdministrasiView sekolah={sekolah} onSave={uS} showAlert={sA} />}
+                                {aT === 'administrasi' && <AdministrasiView sekolah={sekolah} onSave={uS} showAlert={sA} showConfirm={sC} allData={{ buku, anggota, peminjaman, kehadiran, quotes }} />}
                                 {aT === 'cari' && <PencarianBukuView data={buku} />}
                                 {aT === 'label' && <LabelView data={buku} onPrint={hP} sekolah={sekolah} filter={fL} setFilter={setFL} />}
                                 {aT === 'kartu' && <KartuAnggotaView data={anggota} onPrint={hP} sekolah={sekolah} filter={fKartu} setFilter={setFKartu} />}
