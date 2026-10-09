@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <base target="_top">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistem Informasi Perpustakaan</title>
@@ -608,7 +607,8 @@ const formatNamaGelarPintar = (input) => {
 
       const TopPeminjam = ({ peminjaman, anggota, onUserClick, sekolah }) => {
     const t = useMemo(() => {
-        const cM = new Date().toISOString().substring(0, 7);
+       const now = new Date();
+const cM = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
         const c = {};
         peminjaman.forEach(p => { if (p.tglPinjam.startsWith(cM)) c[p.idAnggota] = (c[p.idAnggota] || 0) + 1; });
         return Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([id, cnt], i) => { const u = anggota.find(a => a.id === id); return u ? { u, cnt, rank: i + 1 } : null }).filter(Boolean);
@@ -985,7 +985,8 @@ const PrintDataAnggotaView = ({ anggota, sekolah, search }) => {
         };
 
         const PrintHadirView = ({ kehadiran, sekolah }) => { 
-            const td = new Date().toISOString().split('T')[0]; 
+            const now = new Date();
+const td = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
             const dH = kehadiran.filter(k => k.tanggal === td); 
             return (
                 <div id="print-area">
@@ -3191,7 +3192,7 @@ const BukuView = ({ data = [], peminjaman = [], onAdd, onUpdate, onDelete, showA
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 25;
 
-    // PENGAMAN TEKS ANTI-CRASH (Mencegah layar putih jika ada data corrupt/object/null di Firebase)
+    // PENGAMAN TEKS ANTI-CRASH
     const safeStr = (val) => {
         if (val === null || val === undefined) return '';
         if (typeof val === 'object') return JSON.stringify(val);
@@ -3217,7 +3218,7 @@ const BukuView = ({ data = [], peminjaman = [], onAdd, onUpdate, onDelete, showA
         return `${jStr.substring(0, 3).toUpperCase()} ${listP[0] ? listP[0].charAt(0).toLowerCase() : ""}`.trim();
     };
 
-    // FUNGSI AUTO-FILL KATALOG DARI ISBN
+   // FUNGSI AUTO-FILL KATALOG DARI CLOUDFLARE GEMINI API (VERSI ROBUST PARSING)
     const fetchBookByISBN = async (rawIsbn) => {
         const cleanIsbn = safeStr(rawIsbn).replace(/[^0-9Xx]/g, '');
         if (!cleanIsbn || cleanIsbn.length < 10) {
@@ -3226,40 +3227,90 @@ const BukuView = ({ data = [], peminjaman = [], onAdd, onUpdate, onDelete, showA
         setIsFetchingIsbn(true);
         try {
             let found = null;
-            const resG = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`);
-            const dataG = await resG.json();
-            if (dataG.items && dataG.items.length > 0) {
-                const info = dataG.items[0].volumeInfo || {};
-                found = {
-                    judul: safeStr(info.title),
-                    anakJudul: safeStr(info.subtitle),
-                    pengarang: Array.isArray(info.authors) ? info.authors.join(', ') : '',
-                    penerbit: safeStr(info.publisher),
-                    tahun: safeStr(info.publishedDate).substring(0, 4),
-                    deskripsiFisik: info.pageCount ? `${info.pageCount} hlm.` : '',
-                    subjek: Array.isArray(info.categories) ? info.categories.join(', ') : '',
-                    sinopsis: safeStr(info.description),
-                    cover: info.imageLinks?.thumbnail ? info.imageLinks.thumbnail.replace('http://', 'https://') : ''
-                };
-            } else {
-                const resOL = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`);
-                const dataOL = await resOL.json();
-                const bookOL = dataOL[`ISBN:${cleanIsbn}`];
-                if (bookOL) {
+
+            // 1. Tarik Data dari Cloudflare Worker Gemini API
+            try {
+                const resGemini = await fetch(`https://lokabaca-isbn-api.feriindraprasta.workers.dev/?isbn=${cleanIsbn}`);
+                
+                if (resGemini.ok) {
+                    // Ambil sebagai teks mentah terlebih dahulu untuk mencegah error parsing JSON
+                    const textResponse = await resGemini.text();
+                    let dataGemini = null;
+                    
+                    try {
+                        // Percobaan 1: Parse langsung (Jika respons Worker sudah JSON murni)
+                        dataGemini = JSON.parse(textResponse);
+                    } catch (parseErr) {
+                        // Percobaan 2: Bersihkan tag markdown jika AI mengembalikan format ```json ... ```
+                        const jsonMatch = textResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+                        if (jsonMatch && jsonMatch[1]) {
+                            dataGemini = JSON.parse(jsonMatch[1]);
+                        } else {
+                            console.warn("Format AI tidak dikenali:", textResponse);
+                        }
+                    }
+
+                    // Ambil payload (antisipasi jika data dibungkus objek { data: {...} } atau { result: {...} })
+                    const payload = dataGemini?.data || dataGemini?.result || dataGemini;
+
+                    // Pastikan payload memiliki judul sebelum memproses
+                    if (payload && payload.judul) {
+                        found = {
+                            judul: safeStr(payload.judul),
+                            anakJudul: safeStr(payload.anakJudul),
+                            pengarang: safeStr(payload.pengarang),
+                            penerbit: safeStr(payload.penerbit),
+                            tahun: safeStr(payload.tahun).match(/\d{4}/)?.[0] || safeStr(payload.tahun),
+                            deskripsiFisik: safeStr(payload.deskripsiFisik),
+                            subjek: safeStr(payload.subjek),
+                            sinopsis: safeStr(payload.sinopsis),
+                            cover: safeStr(payload.cover)
+                        };
+                        console.log("Berhasil mendapat data dari Worker Gemini:", found);
+                    }
+                }
+            } catch (errGemini) {
+                console.warn('Gagal menghubungi API Cloudflare Gemini atau terjadi CORS error.', errGemini);
+            }
+
+            // 2. Fallback ke Google Books & Open Library Jika Tidak Ditemukan di Gemini API
+            if (!found) {
+                const resG = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`);
+                const dataG = await resG.json();
+                if (dataG.items && dataG.items.length > 0) {
+                    const info = dataG.items[0].volumeInfo || {};
                     found = {
-                        judul: safeStr(bookOL.title),
-                        anakJudul: safeStr(bookOL.subtitle),
-                        pengarang: Array.isArray(bookOL.authors) ? bookOL.authors.map(a => a.name).join(', ') : '',
-                        penerbit: Array.isArray(bookOL.publishers) ? bookOL.publishers.map(p => p.name).join(', ') : '',
-                        tahun: safeStr(bookOL.publish_date).match(/\d{4}/)?.[0] || '',
-                        deskripsiFisik: bookOL.number_of_pages ? `${bookOL.number_of_pages} hlm.` : '',
-                        subjek: Array.isArray(bookOL.subjects) ? bookOL.subjects.slice(0, 3).map(s => s.name).join(', ') : '',
-                        sinopsis: typeof bookOL.notes === 'string' ? bookOL.notes : '',
-                        cover: bookOL.cover?.medium || bookOL.cover?.small || ''
+                        judul: safeStr(info.title),
+                        anakJudul: safeStr(info.subtitle),
+                        pengarang: Array.isArray(info.authors) ? info.authors.join(', ') : '',
+                        penerbit: safeStr(info.publisher),
+                        tahun: safeStr(info.publishedDate).substring(0, 4),
+                        deskripsiFisik: info.pageCount ? `${info.pageCount} hlm.` : '',
+                        subjek: Array.isArray(info.categories) ? info.categories.join(', ') : '',
+                        sinopsis: safeStr(info.description),
+                        cover: info.imageLinks?.thumbnail ? info.imageLinks.thumbnail.replace('http://', 'https://') : ''
                     };
+                } else {
+                    const resOL = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`);
+                    const dataOL = await resOL.json();
+                    const bookOL = dataOL[`ISBN:${cleanIsbn}`];
+                    if (bookOL) {
+                        found = {
+                            judul: safeStr(bookOL.title),
+                            anakJudul: safeStr(bookOL.subtitle),
+                            pengarang: Array.isArray(bookOL.authors) ? bookOL.authors.map(a => a.name).join(', ') : '',
+                            penerbit: Array.isArray(bookOL.publishers) ? bookOL.publishers.map(p => p.name).join(', ') : '',
+                            tahun: safeStr(bookOL.publish_date).match(/\d{4}/)?.[0] || '',
+                            deskripsiFisik: bookOL.number_of_pages ? `${bookOL.number_of_pages} hlm.` : '',
+                            subjek: Array.isArray(bookOL.subjects) ? bookOL.subjects.slice(0, 3).map(s => s.name).join(', ') : '',
+                            sinopsis: typeof bookOL.notes === 'string' ? bookOL.notes : '',
+                            cover: bookOL.cover?.medium || bookOL.cover?.small || ''
+                        };
+                    }
                 }
             }
 
+            // 3. Set State dan Form Update
             if (found) {
                 setFm(prev => ({
                     ...prev,
@@ -3276,13 +3327,13 @@ const BukuView = ({ data = [], peminjaman = [], onAdd, onUpdate, onDelete, showA
                     cover: found.cover || prev.cover,
                     kodeLabel: getSpineCode(found.pengarang || prev.pengarang, found.judul || prev.judul)
                 }));
-                showAlert && showAlert('Auto-Fill Berhasil!', `Data buku "${found.judul}" berhasil ditarik otomatis dari database ISBN.`, 'success');
+                showAlert && showAlert('Auto-Fill Berhasil!', `Data buku "${found.judul}" berhasil ditarik otomatis dari AI.`, 'success');
             } else {
                 setFm(prev => ({ ...prev, isbn: cleanIsbn, noInduk: prev.noInduk || cleanIsbn }));
-                showAlert && showAlert('ISBN Tercatat', `Kode ISBN ${cleanIsbn} berhasil di-scan, namun detail buku belum terdaftar di database publik. Silakan lengkapi judul secara manual.`, 'info');
+                showAlert && showAlert('ISBN Tercatat', `Kode ISBN ${cleanIsbn} berhasil di-scan, namun AI tidak menemukan data detailnya. Silakan lengkapi manual.`, 'info');
             }
         } catch (err) {
-            showAlert && showAlert('Gagal Menarik Data', 'Terjadi gangguan koneksi saat menghubungi server ISBN.', 'error');
+            showAlert && showAlert('Gagal Menarik Data', 'Terjadi gangguan koneksi.', 'error');
         } finally {
             setIsFetchingIsbn(false);
         }
@@ -3380,7 +3431,6 @@ const BukuView = ({ data = [], peminjaman = [], onAdd, onUpdate, onDelete, showA
         r.readAsArrayBuffer(l);
     };
 
-    // FILTER SELURUH DATA DENGAN PENGAMAN PENUH
     const fD = safeBuku.filter(i => {
         if (!i || i.status === 'Direduksi') return false;
         const fl = safeStr(f).toLowerCase();
@@ -3508,7 +3558,19 @@ const BukuView = ({ data = [], peminjaman = [], onAdd, onUpdate, onDelete, showA
                                             <div>
                                                 <label className="block text-sm font-bold text-slate-600 mb-1.5 ml-1">ISBN (Auto-Fill Katalog)</label>
                                                 <div className="flex gap-2">
-                                                    <input type="text" className="input-field" placeholder="Scan / Ketik ISBN..." value={safeStr(fm.isbn)} onChange={e => setFm({ ...fm, isbn: e.target.value })} />
+                                                    <input 
+                                                        type="text" 
+                                                        className="input-field" 
+                                                        placeholder="Scan / Ketik ISBN..." 
+                                                        value={safeStr(fm.isbn)} 
+                                                        onChange={e => setFm({ ...fm, isbn: e.target.value })}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                fetchBookByISBN(fm.isbn);
+                                                            }
+                                                        }}
+                                                    />
                                                     <button type="button" onClick={() => setScanTarget('isbn')} className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl shadow-md shrink-0" title="Scan ISBN via Kamera HP">
                                                         <i className="fas fa-camera"></i>
                                                     </button>
@@ -4402,24 +4464,28 @@ const PinjamView = ({ data = [], anggota = [], buku = [], onAdd, onUpdate, onDel
                 </div>
             )}
             <FastScannerModal 
-                isOpen={!!scanMode} 
-                onClose={() => setScanMode(null)} 
-                title={scanMode === 'anggota' ? 'Scan Kartu Anggota' : `Scan Buku untuk ${sA?.nama || 'Peminjam'}`}
-                continuous={scanMode === 'buku'} // Jika scan buku, kamera tetap menyala untuk scan banyak buku sekaligus!
-                onDetected={(code) => {
-                    if (scanMode === 'anggota') {
-                        hSC({ target: { value: code } });
-                    } else if (scanMode === 'buku') {
-                        const inputEl = document.getElementById('barcodeInput');
-                        if (inputEl) inputEl.value = code;
-                        setF(prev => ({ ...prev, kodeEksemplar: code }));
-                        // Otomatis jalankan proses pinjam seperti tekan Enter di scanner kasir
-                        setTimeout(() => {
-                            hS({ preventDefault: () => {} });
-                        }, 50);
-                    }
-                }} 
-            />
+    isOpen={!!scanMode} 
+    onClose={() => setScanMode(null)} 
+    title={scanMode === 'anggota' ? 'Scan Kartu Anggota' : `Scan Buku untuk ${sA?.nama || 'Peminjam'}`}
+    continuous={false} // 1. Ubah menjadi false agar kamera tidak terus menyala
+    onDetected={(code) => {
+        if (scanMode === 'anggota') {
+            hSC({ target: { value: code } });
+            setScanMode(null); // 2. Tambahkan ini agar modal langsung menutup
+        } else if (scanMode === 'buku') {
+            const inputEl = document.getElementById('barcodeInput');
+            if (inputEl) inputEl.value = code;
+            setF(prev => ({ ...prev, kodeEksemplar: code }));
+            
+            setScanMode(null); // 3. Tambahkan ini agar modal langsung menutup
+            
+            // Otomatis jalankan proses pinjam seperti tekan Enter di scanner kasir
+            setTimeout(() => {
+                hS({ preventDefault: () => {} });
+            }, 50);
+        }
+    }} 
+/>
         </>
     );
 };
