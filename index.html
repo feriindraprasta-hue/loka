@@ -1338,7 +1338,6 @@ const td = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
                 </div>
             );
         };
-        
         const RekapView = ({ kehadiran, peminjaman, anggota, onPrint, filter, setFilter, sekolah }) => {
             const uKlsLengkap = useMemo(() => [...new Set(anggota.filter(d => d.kategori === 'Siswa').map(d => formatKelasSiswa(d, sekolah?.daftarJurusan)).filter(Boolean))].sort(), [anggota, sekolah]);
             const uJurusan = useMemo(() => [...new Set(anggota.filter(d => d.kategori === 'Siswa' && d.jurusan).map(d => d.jurusan))].sort(), [anggota]);
@@ -1374,6 +1373,13 @@ const td = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
                     if (!a || a.tahunPelajaran !== filter.tahun) return false;
                 }
                 return true;
+            }).sort((a, b) => {
+                const dateA = new Date(a.tanggal).getTime();
+                const dateB = new Date(b.tanggal).getTime();
+                // 1. Urutkan berdasarkan tanggal terbaru terlebih dahulu
+                if (dateB !== dateA) return dateB - dateA;
+                // 2. Jika tanggalnya sama persis, urutkan berdasarkan waktu/jam terbaru (createdAt)
+                return (b.createdAt || 0) - (a.createdAt || 0);
             });
 
             const fP = peminjaman.filter(p => {
@@ -1401,6 +1407,13 @@ const td = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
                     if (a.tahunPelajaran !== filter.tahun) return false;
                 }
                 return true;
+            }).sort((a, b) => {
+                const dateA = new Date(a.tglPinjam).getTime();
+                const dateB = new Date(b.tglPinjam).getTime();
+                // 1. Urutkan berdasarkan tanggal pinjam terbaru terlebih dahulu
+                if (dateB !== dateA) return dateB - dateA;
+                // 2. Jika tanggalnya sama persis, urutkan berdasarkan waktu/jam pinjam terbaru
+                return (b.createdAt || 0) - (a.createdAt || 0);
             });
 
             return (
