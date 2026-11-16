@@ -316,7 +316,7 @@
                         <div class="bg-white p-5 md:p-8 rounded-3xl shadow-sm border border-slate-100 flex flex-col hover:shadow-md transition-shadow">
                             <div class="flex justify-between items-end mb-6 border-b border-slate-50 pb-4">
                                 <div>
-                                    <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Karya <span class="text-orange-500">Siswa</span></h2>
+                                    <h2 class="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Karya <span class="text-orange-500">Warga</span> <span class="text-emerald-500">Sekolah</span></h2>
                                     <p class="text-slate-500 text-xs md:text-sm mt-1">Apresiasi hasil karya literasi.</p>
                                 </div>
                                 <button onclick="navigateTo('karya-siswa')" class="text-xs md:text-sm font-bold text-violet-600 hover:text-orange-500 transition-colors">Lihat Semua &rarr;</button>
@@ -784,7 +784,7 @@
 
         <!-- Halaman Full List (Berita & Karya Publik dengan Pagination) -->
         <section id="page-berita-kegiatan" class="page-section py-16 md:py-20 min-h-[70vh] relative overflow-hidden bg-slate-50"><div class="max-w-6xl mx-auto px-4"><div class="text-center mb-10"><span class="text-xs md:text-sm font-bold tracking-widest text-violet-600 uppercase mb-2 block">Literasi Digital</span><h2 class="text-3xl font-black text-slate-800">Berita & Kegiatan Terbaru</h2></div><div id="public-list-berita" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div></div></section>
-        <section id="page-karya-siswa" class="page-section py-16 md:py-20 min-h-[70vh] relative overflow-hidden bg-slate-50"><div class="max-w-6xl mx-auto px-4"><div class="text-center mb-10"><span class="text-xs md:text-sm font-bold tracking-widest text-orange-600 uppercase mb-2 block">Kreativitas</span><h2 class="text-3xl font-black text-slate-800">Apresiasi Karya Siswa</h2></div><div id="public-list-karya" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div></div></section>
+        <section id="page-karya-siswa" class="page-section py-16 md:py-20 min-h-[70vh] relative overflow-hidden bg-slate-50"><div class="max-w-6xl mx-auto px-4"><div class="text-center mb-10"><span class="text-xs md:text-sm font-bold tracking-widest text-orange-600 uppercase mb-2 block">Kreativitas</span><h2 class="text-3xl font-black text-slate-800">Apresiasi Karya <span class="text-orange-600">Warga</span> <span class="text-emerald-500">Sekolah</span></h2></div><div id="public-list-karya" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div></div></section>
 
         <!-- Modal Baca Berita / Karya Full -->
         <div id="baca-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] hidden flex justify-center items-end md:items-center sm:p-6 transition-opacity opacity-0" onclick="closeBacaModal()">
@@ -1066,6 +1066,57 @@
         var limitKarya = 6;
 
         function safeStr(val) { return (val === null || val === undefined) ? '' : String(val); }
+		const formatNamaGelarPintar = (input) => {
+            if (!input) return "";
+
+            const masterGelarDepan = ["Drs.", "Dra.", "Dr.", "Prof.", "Ir.", "H.", "Hj.", "Ns.", "K.H."];
+            const masterGelarBelakang = [
+                "S.ST.Par.", "S.Kom.", "S.Pd.", "Gr.", "S.T.", "S.E.", "S.H.", "S.Tr.Par.", 
+                "S.Sos.", "M.Pd.", "M.Kom.", "M.Si.", "M.T.", "Ph.D.", "S.Ag.", "M.Ag.", "S.Pd.I." , "S.Psi.",
+                "A.Md.", "M.H." 
+            ];
+            
+            let namaBersih = input;
+            let gelarDepanDitemukan = [];
+            let gelarBelakangDitemukan = [];
+
+            // 1. Ekstrak gelar depan dengan Regex yang lebih kuat
+            masterGelarDepan.forEach(gelar => {
+                const regex = new RegExp(`(^|\\s)${gelar.replace(/\./g, '\\.')}(?=\\s|$)`, 'gi');
+                if (regex.test(namaBersih)) {
+                    gelarDepanDitemukan.push(gelar); // Simpan format huruf aslinya
+                    namaBersih = namaBersih.replace(regex, '').trim();
+                }
+            });
+
+            // 2. Ekstrak gelar belakang
+            masterGelarBelakang.forEach(gelar => {
+                const regex = new RegExp(`[,\\s]*${gelar.replace(/\./g, '\\.')}(?=[,\\s]|$)`, 'gi');
+                if (regex.test(namaBersih)) {
+                    gelarBelakangDitemukan.push(gelar); // Simpan format huruf aslinya
+                    namaBersih = namaBersih.replace(regex, '').trim();
+                }
+            });
+
+            // 3. Bersihkan sisa koma dan spasi
+            namaBersih = namaBersih.replace(/,+$/, '').trim();
+
+            // 4. Ubah sisa nama menjadi Title Case (Feri Indra Prasta)
+            namaBersih = namaBersih.toLowerCase().split(' ').map(kata => 
+                kata.charAt(0).toUpperCase() + kata.slice(1)
+            ).join(' ');
+
+            // 5. Rangkai kembali: Gelar Depan + Nama Bersih + Gelar Belakang
+            let hasil = namaBersih;
+            if (gelarDepanDitemukan.length > 0) {
+                hasil = gelarDepanDitemukan.join(' ') + ' ' + hasil;
+            }
+            if (gelarBelakangDitemukan.length > 0) {
+                hasil = hasil + ', ' + gelarBelakangDitemukan.join(', ');
+            }
+
+            return hasil;
+        };
 
         // FUNGSI 1: Mengubah file gambar/dokumen menjadi format teks Base64 untuk disimpan
         window.convertToBase64 = function(file) {
@@ -1384,7 +1435,7 @@
                                 <div class="flex items-center gap-3 overflow-hidden">
                                     <div class="w-8 h-8 rounded-full bg-indigo-50 text-indigo-400 flex items-center justify-center text-xs shadow-inner overflow-hidden shrink-0 border border-indigo-100">${photoHtml}</div>
                                     <div class="overflow-hidden">
-                                        <p class="font-bold text-slate-800 text-xs truncate leading-tight uppercase">${safeStr(k.nama)}</p>
+                                        <p class="font-bold text-slate-800 text-xs truncate leading-tight">${formatNamaGelarPintar(k.nama)}</p>
                                         <p class="text-[9px] font-bold text-slate-400 uppercase mt-0.5 truncate">${safeStr(clsFormat)}</p>
                                     </div>
                                 </div>
@@ -1419,7 +1470,7 @@
                                 <div class="flex items-center gap-3 overflow-hidden">
                                     <div class="w-6 text-center text-base drop-shadow-sm shrink-0 ${medalColors[x.rank - 1]}"><i class="fas fa-medal"></i></div>
                                     <div class="overflow-hidden">
-                                        <p class="font-bold text-slate-800 text-xs truncate leading-tight uppercase">${safeStr(x.u.nama)}</p>
+                                        <p class="font-bold text-slate-800 text-xs truncate leading-tight">${formatNamaGelarPintar(x.u.nama)}</p>
                                         <p class="text-[9px] font-bold text-slate-400 uppercase mt-0.5 truncate">${safeStr(clsFormat)}</p>
                                     </div>
                                 </div>
@@ -1466,7 +1517,7 @@
             const dataTarget = tipe === 'berita' ? cmsBerita : cmsKarya;
             const item = dataTarget.find(x => x.id === id); if(!item) return;
 
-            document.getElementById('baca-badge').textContent = tipe === 'berita' ? 'Berita & Kegiatan' : 'Karya Siswa';
+            document.getElementById('baca-badge').textContent = tipe === 'berita' ? 'Berita & Kegiatan' : 'Karya Warga Sekolah';
             document.getElementById('baca-badge').className = tipe === 'berita' ? 'px-3 py-1 bg-fuchsia-100 text-fuchsia-700 text-xs font-black uppercase rounded-lg' : 'px-3 py-1 bg-orange-100 text-orange-700 text-xs font-black uppercase rounded-lg';
             
             document.getElementById('baca-judul').textContent = item.judul; document.getElementById('baca-tanggal').textContent = item.tanggal;
@@ -1760,13 +1811,20 @@ const dbWeb = initializeFirestore(appWeb, {
                 animateValue('stat-aset', totalAset);
             }).catch(console.error);
 
-            // Hitung Pengunjung Hari Ini
-            const d = new Date(); const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-            getDocs(query(collection(dbLoka, basePathLoka + "/kehadiran"), where("tanggal", "==", ds))).then(snapPengunjung => {
-                animateValue('stat-pengunjung', snapPengunjung.size);
-                const badgePanel = document.getElementById('badge-pengunjung-today');
-                if(badgePanel) badgePanel.textContent = snapPengunjung.size;
-            }).catch(console.error);
+            // Hitung Pengunjung Hari Ini (Diubah menjadi Real-Time)
+        const d = new Date(); const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        
+        onSnapshot(query(collection(dbLoka, basePathLoka + "/kehadiran"), where("tanggal", "==", ds)), (snapPengunjung) => {
+            // Update angka besar di box atas (jika ada)
+            const statBox = document.getElementById('stat-pengunjung');
+            if(statBox) statBox.textContent = snapPengunjung.size; // Langsung di-set agar responsif
+            
+            // Update angka badge kecil di sebelah judul panel
+            const badgePanel = document.getElementById('badge-pengunjung-today');
+            if(badgePanel) badgePanel.textContent = snapPengunjung.size;
+        }, (error) => {
+            console.error("Error Realtime Total Pengunjung:", error);
+        });
 
             // ==========================================
             // OPTIMASI KOLEKSI TERBARU & PENGUNJUNG DASBOR
