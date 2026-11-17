@@ -1348,7 +1348,7 @@
             setTimeout(() => { modal.classList.add('hidden'); }, 300);
         }
 
-        function renderBukuHTML(b) {
+       function renderBukuHTML(b) {
             const isTersedia = parseInt(b.stock) > 0;
             const badgeClass = isTersedia ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-rose-50 text-rose-600 border-rose-100";
             const badgeIcon = isTersedia ? "fa-check" : "fa-times";
@@ -1357,9 +1357,25 @@
 
             return `
                 <div class="border border-slate-200/60 rounded-2xl md:rounded-[1.5rem] p-4 md:p-5 hover:shadow-xl hover:-translate-y-2 transition-all duration-300 bg-white flex flex-col md:flex-row gap-3 md:gap-4 cursor-pointer group w-full" onclick="openBookModal('${b.id}')">
-                    <div class="w-full md:w-24 h-40 md:h-36 shrink-0 rounded-lg md:rounded-xl overflow-hidden bg-slate-100 shadow-sm border border-slate-200">
-                        <img src="${coverUrl}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="Cover" loading="lazy">
+                    
+                    <!-- Container Gambar Ditambah 'relative' -->
+                    <div class="relative w-full md:w-24 h-40 md:h-36 shrink-0 rounded-lg md:rounded-xl overflow-hidden bg-slate-100 shadow-sm border border-slate-200">
+                        
+                        <!-- Gambar dengan class blur dinamis -->
+                        <img src="${coverUrl}" 
+                             class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ${isTersedia ? '' : 'blur-[2px] opacity-75'}" 
+                             alt="Cover" 
+                             loading="lazy">
+                             
+                        <!-- Label DIPINJAM di tengah -->
+                        ${!isTersedia ? `
+                        <div class="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                            <span class="bg-rose-500 text-white font-black px-2 md:px-3 py-1 md:py-1.5 rounded text-[8px] md:text-[9px] tracking-widest uppercase shadow-md transform -rotate-[10deg] border border-white leading-none">
+                                DIPINJAM
+                            </span>
+                        </div>` : ''}
                     </div>
+                    
                     <div class="flex flex-col flex-1 overflow-hidden w-full">
                         <h3 class="font-black text-sm md:text-base lg:text-lg text-slate-800 line-clamp-2 leading-tight uppercase group-hover:text-indigo-600 transition-colors">${safeStr(b.judul) || '-'}</h3>
                         <p class="text-[9px] md:text-[10px] font-bold text-slate-500 mb-2 truncate uppercase mt-1">${safeStr(b.pengarang) || '-'}</p>
@@ -1405,13 +1421,36 @@
         window.renderKoleksiTerbaru = function(bukuList) {
             const terbaruContainer = document.getElementById("koleksi-terbaru-container");
             if (terbaruContainer) {
-                terbaruContainer.innerHTML = bukuList.length === 0 ? '<div class="col-span-full text-center py-12 text-slate-400 font-bold">Koleksi belum tersedia.</div>' : bukuList.map(b => {
+                terbaruContainer.innerHTML = bukuList.length === 0 ? '<div class="col-span-full text-center py-12 text-slate-400 font-bold">Koleksi belum tersedia.</div>' : bukuList.map((b, index) => {
                     const isTersedia = parseInt(b.stock) > 0;
+                    
+                    // LOGIKA PENENGAHAN HP: Cek jika ini elemen terakhir DAN jumlah total buku ganjil
+                    const isLastOdd = (index === bukuList.length - 1) && (bukuList.length % 2 !== 0);
+                    
+                    // Di HP (col-span-2) membentang penuh lalu di-tengahkan (mx-auto).
+                    // Lebarnya diset w-[calc(50%-0.5rem)] agar ukurannya persis sama dengan 1 kolom (mengimbangi gap-4).
+                    // Pada layar lebih besar (sm:), ukurannya kembali normal 1 kolom penuh (sm:col-span-1 sm:w-full).
+                    const wrapperClass = isLastOdd 
+                        ? "col-span-2 sm:col-span-1 w-[calc(50%-0.5rem)] sm:w-full mx-auto flex flex-col group cursor-pointer" 
+                        : "w-full flex flex-col group cursor-pointer";
+
                     return `
-                        <div class="flex flex-col group cursor-pointer w-full" onclick="openBookModal('${b.id}')">
-                            <div class="relative w-full aspect-[2/3] rounded-xl overflow-hidden shadow-sm md:shadow-md group-hover:-translate-y-1.5 mb-2 transition-all border border-slate-100">
-                                <img src="${b.cover || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgNDUwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjQ1MCIgZmlsbD0iI2YxZjVmOSIvPjx0ZXh0IHg9IjE1MCIgeT0iMjI1IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIyMCIgZmlsbD0iI2NiZDVlMSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgYWxpZ25tZW50LWJhc2VsaW5lPSJtaWRkbGUiPldpdGhvdXQgQ292ZXI8L3RleHQ+PC9zdmc+'}" alt="Cover" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" loading="lazy">
-                                <div class="absolute top-2 right-2 px-2 py-1 rounded-lg text-[9px] font-black text-white ${isTersedia ? 'bg-emerald-500/90' : 'bg-orange-500/90'} backdrop-blur-md uppercase">${isTersedia ? 'Tersedia' : 'Dipinjam'}</div>
+                        <div class="${wrapperClass}" onclick="openBookModal('${b.id}')">
+                            <div class="relative w-full aspect-[2/3] rounded-xl overflow-hidden shadow-sm md:shadow-md group-hover:-translate-y-1.5 mb-2 transition-all border border-slate-100 bg-slate-200">
+                                
+                                <img src="${b.cover || 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgNDUwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjQ1MCIgZmlsbD0iI2YxZjVmOSIvPjx0ZXh0IHg9IjE1MCIgeT0iMjI1IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiIgZm9udC1zaXplPSIyMCIgZmlsbD0iI2NiZDVlMSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgYWxpZ25tZW50LWJhc2VsaW5lPSJtaWRkbGUiPldpdGhvdXQgQ292ZXI8L3RleHQ+PC9zdmc+'}" 
+                                     alt="Cover" 
+                                     class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ${isTersedia ? '' : 'blur-[3px] opacity-75'}" 
+                                     loading="lazy">
+                                
+                                ${isTersedia 
+                                    ? `<div class="absolute top-2 right-2 px-2 py-1 rounded-lg text-[9px] font-black text-white bg-emerald-500/90 backdrop-blur-md uppercase shadow-sm">Tersedia</div>` 
+                                    : `<div class="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                                           <span class="bg-rose-500 text-white font-black px-4 py-1.5 rounded-lg text-[10px] tracking-widest uppercase shadow-xl transform -rotate-[10deg] border-2 border-white">
+                                               DIPINJAM
+                                           </span>
+                                       </div>`
+                                }
                             </div>
                             <h3 class="font-bold text-slate-800 text-xs md:text-sm leading-tight truncate group-hover:text-violet-700 uppercase">${safeStr(b.judul)}</h3>
                             <p class="text-[10px] text-slate-500 truncate mt-0.5 font-bold uppercase">${safeStr(b.pengarang)}</p>
